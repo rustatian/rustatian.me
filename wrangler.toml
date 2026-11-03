@@ -2,7 +2,7 @@ name = "rustatian-me"
 main = "src/worker.ts"
 compatibility_date = "2025-01-15"
 workers_dev = false
-preview_urls = true
+preview_urls = false
 
 # Custom domains
 routes = [
@@ -24,11 +24,6 @@ local_protocol = "http"
 # Build configuration
 [build]
 command = "bun run build:prod"
-
-# Previews of other branches do not inherit production settings.
-# https://developers.cloudflare.com/workers/previews/configuration/
-[previews.placement]
-mode = "smart"
 
 [observability]
 [observability.logs]
