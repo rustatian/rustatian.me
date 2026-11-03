@@ -25,6 +25,11 @@ local_protocol = "http"
 [build]
 command = "bun run build:prod"
 
+# Previews of other branches do not inherit production settings.
+# https://developers.cloudflare.com/workers/previews/configuration/
+[previews.placement]
+mode = "smart"
+
 [observability]
 [observability.logs]
 enabled = true
