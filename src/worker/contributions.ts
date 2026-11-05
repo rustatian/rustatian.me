@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Contributions } from '../api/contracts';
 import { GraphQLResponseError, UpstreamRequestError } from './errors';
 
 // GitHub's `contributionLevel` enum values mapped to our intensity scale.
@@ -94,15 +95,15 @@ export const transformContributions = (rawBody: string): string => {
   }
 
   const calendar = result.data.data.user.contributionsCollection.contributionCalendar;
-  const days = calendar.weeks.flatMap(week =>
-    week.contributionDays.map(day => ({
-      date: day.date,
-      count: day.contributionCount,
-      level: LEVEL_MAP[day.contributionLevel],
-    })),
-  );
-  return JSON.stringify({
+  const body: Contributions = {
     totalContributions: calendar.totalContributions,
-    days,
-  });
+    days: calendar.weeks.flatMap(week =>
+      week.contributionDays.map(day => ({
+        date: day.date,
+        count: day.contributionCount,
+        level: LEVEL_MAP[day.contributionLevel],
+      })),
+    ),
+  };
+  return JSON.stringify(body);
 };

@@ -1,5 +1,5 @@
 import { useMemo } from 'preact/hooks';
-import type { ContribDay, Level } from '@/api/contributions';
+import type { ContribDay, Level } from '@/api/contracts';
 import { trimPaddedDays } from '@/utils/trimPaddedDays';
 import styles from './ContribGrid.module.css';
 

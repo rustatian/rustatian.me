@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { CACHE_TTL_SECONDS, MAX_STALE_SECONDS } from './api/cachePolicy';
+import type { ErrorEnvelope } from './api/contracts';
 import { API_BASE_PATH, CSP_REPORT_PATH } from './api/routes';
 import { PROFILE_NAME } from './constants';
 import { TokenBucket } from './utils/rateLimiter';
@@ -127,8 +128,6 @@ const createRequestId = (): string => {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
-// The envelope the client parses. It reads only `message`; `code` and
-// `requestId` serve debugging with curl.
 const buildApiErrorResponse = (
   status: number,
   code: WorkerErrorCode,
@@ -144,10 +143,8 @@ const buildApiErrorResponse = (
   });
   applySecurityHeaders(headers, false);
 
-  return new Response(JSON.stringify({ error: { code, message, requestId } }), {
-    status,
-    headers,
-  });
+  const envelope: ErrorEnvelope = { error: { code, message, requestId } };
+  return new Response(JSON.stringify(envelope), { status, headers });
 };
 
 const buildRateLimitResponse = (requestId: string): Response =>
