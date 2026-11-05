@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type CacheKey = RequestInfo | URL;
@@ -960,6 +963,19 @@ describe('worker CSP', () => {
     expect(enforced).not.toContain("'nonce-");
     expect(enforced).not.toContain("'unsafe-inline'");
     expect(enforced).not.toContain("'unsafe-eval'");
+  });
+
+  it('pins the hash of the inline theme bootstrap in index.html', async () => {
+    // CSP matches an inline script by the base64 SHA-256 of its text, so an
+    // edit to the script that does not update THEME_BOOTSTRAP_HASH blocks it.
+    // https://www.w3.org/TR/CSP3/#match-element-to-source-list
+    const html = readFileSync(path.resolve(__dirname, '../../index.html'), 'utf8');
+    const script = html.match(/<script>(.*?)<\/script>/s)?.[1] ?? '';
+    expect(script).not.toBe('');
+    const digest = createHash('sha256').update(script).digest('base64');
+
+    const enforced = (await fetchHome()).headers.get('content-security-policy');
+    expect(enforced).toContain(`'sha256-${digest}'`);
   });
 
   it('does not allow images from arbitrary https origins', async () => {
