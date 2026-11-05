@@ -8,6 +8,8 @@ export default defineConfig({
     setupFiles: ['./src/setupTests.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['node_modules', 'dist'],
+    // Externalized packages bypass the aliases below and load real React.
+    server: { deps: { inline: ['@tanstack/react-query'] } },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

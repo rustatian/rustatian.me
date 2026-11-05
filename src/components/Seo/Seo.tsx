@@ -1,4 +1,5 @@
-import { Helmet } from 'react-helmet-async';
+import { createContext } from 'preact';
+import { useContext, useEffect } from 'preact/hooks';
 import { OG_IMAGE_PATH, SITE_URL } from '@/constants';
 
 interface SeoProps {
@@ -10,29 +11,51 @@ interface SeoProps {
   noindex?: boolean;
 }
 
-// Every page's head in one place. Previously each page hand-rolled its own tags,
-// which is how Home ended up with partial Open Graph tags, About and Contact
-// with none, and no page with a canonical URL at all.
-export const Seo = ({ title, description, path, noindex = false }: SeoProps) => {
+// vite-prerender-plugin writes `title` into <title> and appends each element
+// to <head>.
+// https://github.com/preactjs/vite-prerender-plugin#advanced-prerender-options
+export interface PageHead {
+  title: string;
+  elements: Set<{ type: string; props: Record<string, string> }>;
+}
+
+// prerender() provides the object and the rendered page's Seo fills it. The
+// client has no provider and reads null.
+export const SeoCollector = createContext<{ head?: PageHead } | null>(null);
+
+const meta = (props: Record<string, string>) => ({ type: 'meta', props });
+
+const toHead = ({ title, description, path, noindex = false }: SeoProps): PageHead => {
   const canonical = path ? `${SITE_URL}${path}` : undefined;
+  const image = `${SITE_URL}${OG_IMAGE_PATH}`;
+  return {
+    title,
+    elements: new Set([
+      meta({ name: 'description', content: description }),
+      ...(noindex ? [meta({ name: 'robots', content: 'noindex, nofollow' })] : []),
+      ...(canonical ? [{ type: 'link', props: { rel: 'canonical', href: canonical } }] : []),
+      meta({ property: 'og:type', content: 'website' }),
+      meta({ property: 'og:title', content: title }),
+      meta({ property: 'og:description', content: description }),
+      meta({ property: 'og:image', content: image }),
+      ...(canonical ? [meta({ property: 'og:url', content: canonical })] : []),
+      meta({ name: 'twitter:card', content: 'summary_large_image' }),
+      meta({ name: 'twitter:title', content: title }),
+      meta({ name: 'twitter:description', content: description }),
+      meta({ name: 'twitter:image', content: image }),
+    ]),
+  };
+};
 
-  return (
-    <Helmet>
-      <title>{title}</title>
-      <meta name="description" content={description} />
-      {noindex && <meta name="robots" content="noindex, nofollow" />}
-      {canonical && <link rel="canonical" href={canonical} />}
+// Renders nothing. During prerender it fills the collector. On the client it
+// sets document.title for the current route.
+export const Seo = (props: SeoProps) => {
+  const collector = useContext(SeoCollector);
+  if (collector) collector.head = toHead(props);
 
-      <meta property="og:type" content="website" />
-      <meta property="og:title" content={title} />
-      <meta property="og:description" content={description} />
-      <meta property="og:image" content={`${SITE_URL}${OG_IMAGE_PATH}`} />
-      {canonical && <meta property="og:url" content={canonical} />}
+  useEffect(() => {
+    document.title = props.title;
+  }, [props.title]);
 
-      <meta name="twitter:card" content="summary_large_image" />
-      <meta name="twitter:title" content={title} />
-      <meta name="twitter:description" content={description} />
-      <meta name="twitter:image" content={`${SITE_URL}${OG_IMAGE_PATH}`} />
-    </Helmet>
-  );
+  return null;
 };
