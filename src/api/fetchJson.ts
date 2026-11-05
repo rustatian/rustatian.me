@@ -1,75 +1,32 @@
 import { z } from 'zod';
-import { WORKER_ERROR_CODES, type WorkerErrorCode } from './errorCodes';
 
 // Exceeds the worker's own 8s upstream budget so the proxy leg gets to fail
 // first and return a real error, rather than the UI aborting a live request.
 const REQUEST_TIMEOUT_MS = 10_000;
 
-const WorkerApiErrorSchema = z.object({
-  error: z.object({
-    code: z.enum(WORKER_ERROR_CODES),
-    message: z.string(),
-    upstreamStatus: z.number().optional(),
-    requestId: z.string(),
-  }),
+// The worker envelope carries more fields. Callers show only the message.
+const ErrorEnvelopeSchema = z.object({
+  error: z.object({ message: z.string() }),
 });
 
-export class WorkerApiError extends Error {
-  readonly code: WorkerErrorCode;
-  readonly status: number;
-  readonly requestId: string;
+const TIMEOUT_MESSAGE = 'Request timed out — check your connection';
 
-  constructor(status: number, code: WorkerErrorCode, message: string, requestId: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
-    this.requestId = requestId;
-  }
-}
+// `AbortSignal.timeout()` rejects with a DOMException-flavored TimeoutError.
+const isAbort = (error: unknown): boolean =>
+  error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
 
-export type NetworkErrorKind = 'timeout' | 'offline' | 'unknown';
-
-// Raised when the browser never gets an HTTP response — timeout, DNS, offline,
-// CORS preflight failure, etc. Distinct from `WorkerApiError` so the UI can
-// show a connectivity-specific message instead of a generic "Failed to fetch".
-export class NetworkError extends Error {
-  readonly kind: NetworkErrorKind;
-
-  constructor(kind: NetworkErrorKind, message?: string) {
-    super(message ?? NetworkError.defaultMessage(kind));
-    this.kind = kind;
-  }
-
-  static defaultMessage(kind: NetworkErrorKind): string {
-    switch (kind) {
-      case 'timeout':
-        return 'Request timed out — check your connection';
-      case 'offline':
-        return 'Network unreachable — check your connection';
-      case 'unknown':
-        return 'Network error';
-    }
-  }
-}
-
-const mapApiError = async (response: Response): Promise<Error> => {
+const errorFromResponse = async (response: Response): Promise<Error> => {
   const fallbackMessage = `GitHub API error: ${response.status}`;
 
   try {
     const payload: unknown = await response.json();
-    const parsed = WorkerApiErrorSchema.safeParse(payload);
-
-    if (!parsed.success) {
-      console.warn('WorkerApiError schema mismatch', { issues: parsed.error, payload });
-      return new Error(fallbackMessage);
-    }
-
-    const { code, message, requestId } = parsed.data.error;
-    return new WorkerApiError(response.status, code, message, requestId);
+    const parsed = ErrorEnvelopeSchema.safeParse(payload);
+    if (parsed.success) return new Error(parsed.data.error.message);
+    console.warn('Worker error envelope mismatch', { issues: parsed.error.issues, payload });
   } catch (error) {
-    console.warn('Failed to parse WorkerApiError body', error);
-    return new Error(fallbackMessage);
+    console.warn('Failed to parse the worker error body', error);
   }
+  return new Error(fallbackMessage);
 };
 
 // Feature-detect so SSR / older test envs don't crash on missing
@@ -81,20 +38,12 @@ const createTimeoutSignal = (): AbortSignal | undefined => {
   return undefined;
 };
 
-const mapFetchFailure = (error: unknown): NetworkError => {
-  if (error instanceof Error) {
-    // `AbortSignal.timeout()` rejects with a DOMException-flavored TimeoutError.
-    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-      return new NetworkError('timeout');
-    }
-    // Browser `fetch` surfaces network-level failures (DNS, offline, CORS
-    // preflight, connection reset) as TypeError.
-    if (error instanceof TypeError) {
-      return new NetworkError('offline');
-    }
-    return new NetworkError('unknown', error.message);
-  }
-  return new NetworkError('unknown', String(error));
+// Browser `fetch` surfaces network-level failures (DNS, offline, CORS
+// preflight, connection reset) as TypeError.
+const errorFromFetchFailure = (error: unknown): Error => {
+  if (isAbort(error)) return new Error(TIMEOUT_MESSAGE);
+  if (error instanceof TypeError) return new Error('Network unreachable — check your connection');
+  return new Error(error instanceof Error ? error.message : String(error));
 };
 
 export const fetchJson = async <T>(url: string, schema: z.ZodType<T>): Promise<T> => {
@@ -106,11 +55,11 @@ export const fetchJson = async <T>(url: string, schema: z.ZodType<T>): Promise<T
   try {
     response = await fetch(url, init);
   } catch (error) {
-    throw mapFetchFailure(error);
+    throw errorFromFetchFailure(error);
   }
 
   if (!response.ok) {
-    throw await mapApiError(response);
+    throw await errorFromResponse(response);
   }
 
   let data: unknown;
@@ -119,9 +68,7 @@ export const fetchJson = async <T>(url: string, schema: z.ZodType<T>): Promise<T
   } catch (error) {
     // The timeout signal also covers the body stream, so an expiry that lands
     // mid-read rejects here rather than at the fetch() call above.
-    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
-      throw mapFetchFailure(error);
-    }
+    if (isAbort(error)) throw new Error(TIMEOUT_MESSAGE);
     console.warn('Malformed JSON in API response', error);
     throw new Error('Received a malformed response from the server');
   }

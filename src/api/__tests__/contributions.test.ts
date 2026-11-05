@@ -66,27 +66,6 @@ describe('getContributions', () => {
     await expect(getContributions()).rejects.toThrow();
   });
 
-  it('maps Worker API error envelope to WorkerApiError', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 502,
-      json: () =>
-        Promise.resolve({
-          error: {
-            code: 'UPSTREAM_ERROR',
-            message: 'GitHub GraphQL returned an error: Bad credentials',
-            requestId: 'req_contrib_1',
-          },
-        }),
-    });
-
-    await expect(getContributions()).rejects.toMatchObject({
-      code: 'UPSTREAM_ERROR',
-      status: 502,
-      requestId: 'req_contrib_1',
-    });
-  });
-
   it('hits the expected endpoint path', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,

@@ -1,8 +1,6 @@
 import { z } from 'zod';
-import { fetchJson, NetworkError, WorkerApiError } from './fetchJson';
+import { fetchJson } from './fetchJson';
 import { routes } from './routes';
-
-export { NetworkError, WorkerApiError };
 
 // Only the fields the UI actually reads. The earlier 30-field schema coupled
 // the client to every upstream GitHub user bump — a new nullable field or a

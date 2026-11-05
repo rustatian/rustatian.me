@@ -1,7 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { CACHE_TTL_SECONDS, MAX_STALE_SECONDS } from './api/cachePolicy';
-import type { WorkerErrorCode } from './api/errorCodes';
 import { API_BASE_PATH, CSP_REPORT_PATH } from './api/routes';
 import { PROFILE_NAME } from './constants';
 import { TokenBucket } from './utils/rateLimiter';
@@ -29,6 +28,8 @@ interface Env {
   ASSETS: Fetcher;
   GITHUB_TOKEN?: string;
 }
+
+type WorkerErrorCode = 'RATE_LIMITED' | 'METHOD_NOT_ALLOWED' | 'UPSTREAM_ERROR' | 'NOT_FOUND';
 
 interface WorkerApiErrorBody {
   error: {

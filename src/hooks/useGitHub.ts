@@ -1,15 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { CACHE_TTL_SECONDS } from '@/api/cachePolicy';
-import type { Contributions } from '@/api/contributions';
 import { getContributions } from '@/api/contributions';
-import type { NetworkError, WorkerApiError } from '@/api/fetchJson';
-import type { GitHubUser } from '@/api/githubRequests';
 import { getUser } from '@/api/githubRequests';
-
-// Union with `Error` collapses to `Error` for assignability, so this buys no
-// narrowing on its own — it exists so a consumer that *does* want to branch on
-// `WorkerApiError.code` or `NetworkError.kind` can, without a cast.
-type QueryError = WorkerApiError | NetworkError | Error;
 
 // Retaining past the last observer is browser-only on purpose. React Query's
 // server default is `Infinity`, which schedules no timer; any finite value
@@ -20,7 +12,7 @@ type QueryError = WorkerApiError | NetworkError | Error;
 const clientGcTime = (ms: number) => (typeof window === 'undefined' ? {} : { gcTime: ms });
 
 export const useGitHubUser = () =>
-  useQuery<GitHubUser, QueryError>({
+  useQuery({
     queryKey: ['github-user'],
     queryFn: getUser,
     staleTime: CACHE_TTL_SECONDS.user * 1000,
@@ -28,7 +20,7 @@ export const useGitHubUser = () =>
   });
 
 export const useGitHubContributions = () =>
-  useQuery<Contributions, QueryError>({
+  useQuery({
     queryKey: ['github-contributions'],
     queryFn: getContributions,
     staleTime: CACHE_TTL_SECONDS.contributions * 1000,
