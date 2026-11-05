@@ -1,13 +1,9 @@
-import { z } from 'zod';
+import type { z } from 'zod';
+import { ErrorEnvelopeContract } from './contracts';
 
 // Exceeds the worker's own 8s upstream budget so the proxy leg gets to fail
 // first and return a real error, rather than the UI aborting a live request.
 const REQUEST_TIMEOUT_MS = 10_000;
-
-// The worker envelope carries more fields. Callers show only the message.
-const ErrorEnvelopeSchema = z.object({
-  error: z.object({ message: z.string() }),
-});
 
 const TIMEOUT_MESSAGE = 'Request timed out — check your connection';
 
@@ -20,7 +16,7 @@ const errorFromResponse = async (response: Response): Promise<Error> => {
 
   try {
     const payload: unknown = await response.json();
-    const parsed = ErrorEnvelopeSchema.safeParse(payload);
+    const parsed = ErrorEnvelopeContract.safeParse(payload);
     if (parsed.success) return new Error(parsed.data.error.message);
     console.warn('Worker error envelope mismatch', { issues: parsed.error.issues, payload });
   } catch (error) {

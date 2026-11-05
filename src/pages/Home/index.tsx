@@ -1,4 +1,4 @@
-import type { GitHubUser } from '@/api/githubRequests';
+import type { GitHubUser } from '@/api/contracts';
 import { Seo } from '@/components/Seo/Seo';
 import { Badge } from '@/components/ui/Badge';
 import { ButtonLink } from '@/components/ui/Button';
