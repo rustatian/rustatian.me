@@ -36,4 +36,4 @@ Vitest with jsdom. When touching the worker's caching, note that the mock cache 
 
 - Components are plain arrow functions with a local props interface. No `FunctionalComponent`, no `React.FC`.
 - Hooks come from `preact/hooks`.
-- Page `<head>` content goes through `src/components/Seo/Seo.tsx`, not a bare `<Helmet>` — it supplies canonical and Open Graph tags consistently.
+- Page `<head>` content goes through `<Seo>` in `src/components/Seo/Seo.tsx`. It renders nothing. During prerender it fills the `SeoCollector`, and `prerender()` in `src/index.tsx` returns that head to vite-prerender-plugin. On the client it sets `document.title`. A route without `<Seo>` fails the build.
