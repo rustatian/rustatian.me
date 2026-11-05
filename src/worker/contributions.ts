@@ -79,7 +79,7 @@ export const transformContributions = (rawBody: string): string => {
   try {
     parsedJson = JSON.parse(rawBody);
   } catch {
-    throw new UpstreamRequestError(502, 'parse');
+    throw new UpstreamRequestError(200, 'parse');
   }
 
   // GraphQL allows data+errors simultaneously; surface application errors first.
@@ -90,7 +90,7 @@ export const transformContributions = (rawBody: string): string => {
 
   const result = GraphQLSuccessResponseSchema.safeParse(parsedJson);
   if (!result.success) {
-    throw new UpstreamRequestError(502, 'schema', result.error.issues);
+    throw new UpstreamRequestError(200, 'schema', result.error.issues);
   }
 
   const calendar = result.data.data.user.contributionsCollection.contributionCalendar;

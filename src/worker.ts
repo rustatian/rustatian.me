@@ -43,42 +43,31 @@ interface WorkerApiErrorBody {
 interface UpstreamRouteBase {
   upstreamUrl: string;
   ttlSeconds: number;
-  contentType: string;
-  // Override the edge cache key. Defaults to the incoming request URL. Use a
-  // stable `https://cache.internal/...` URL when the response doesn't vary
-  // per-request and all clients should share a single cached entry (e.g. the
-  // daily-refreshed contributions calendar).
-  cacheKey?: string;
-  // Cap how long a stale response can be served on upstream failure. Omit for
-  // "serve stale forever" (previous behavior). Set to bound outage tolerance:
-  // once past `expiresAt + maxStaleSeconds` the worker surfaces a 502 instead
-  // of serving fossilised data.
-  maxStaleSeconds?: number;
+  // Past `expiresAt + maxStaleSeconds` a failed refresh surfaces a 502. This
+  // bounds how old a served body can be.
+  maxStaleSeconds: number;
+  // Stable `https://cache.internal/...` URL so every client shares one entry.
+  // A key derived from the request URL gives each query string its own entry
+  // and its own upstream call against the token's hourly quota. The Workers
+  // Cache API wants a full URL.
+  cacheKey: string;
+  // Every upstream request is authenticated, so a verbatim body can disclose
+  // fields GitHub only returns to the account owner. The returned string is
+  // cached verbatim. Must throw `UpstreamRequestError` or `GraphQLResponseError`
+  // on parse, schema or application failures.
+  transform: (rawBody: string) => string;
 }
 
-// Discriminated union on `kind` so TypeScript (and readers) can't conflate
-// the simple proxy case with the authenticated GraphQL case. Each variant
-// only carries fields relevant to its mode — no optionals that "should only
-// appear together." Both variants must supply a `transform`: every upstream
-// request is authenticated, so proxying a body verbatim can disclose fields
-// GitHub only returns to the account owner.
+// Discriminated union on `kind` so the simple proxy case and the authenticated
+// GraphQL case cannot be conflated.
 type UpstreamRoute =
-  | (UpstreamRouteBase & {
-      kind: 'simple-get';
-      transform: (rawBody: string) => string;
-    })
-  | (UpstreamRouteBase & {
-      kind: 'graphql-post';
-      body: string;
-      bodyContentType: string;
-      // Must throw `UpstreamRequestError` or `GraphQLResponseError` to surface
-      // parse / schema / application failures; the returned string is cached
-      // verbatim under `cacheKey`, falling back to the incoming request URL.
-      transform: (rawBody: string) => string;
-    });
+  | (UpstreamRouteBase & { kind: 'simple-get' })
+  | (UpstreamRouteBase & { kind: 'graphql-post'; body: string });
 
 const GITHUB_API_HOST = 'https://api.github.com';
 const REQUEST_TIMEOUT_MS = 8000;
+const CACHE_NAME = 'github-proxy-cache';
+const JSON_CONTENT_TYPE = 'application/json; charset=UTF-8';
 const CACHE_EXPIRES_HEADER = 'x-edge-expires-at';
 const REQUEST_ID_HEADER = 'x-request-id';
 const CACHE_STATUS_HEADER = 'x-cache';
@@ -154,7 +143,7 @@ const buildApiErrorResponse = (
   extraHeaders?: Record<string, string>,
 ): Response => {
   const headers = new Headers({
-    'content-type': 'application/json; charset=UTF-8',
+    'content-type': JSON_CONTENT_TYPE,
     'cache-control': 'no-store',
     [REQUEST_ID_HEADER]: requestId,
   });
@@ -258,12 +247,8 @@ const resolveGitHubRoute = (pathname: string): UpstreamRoute | null => {
       kind: 'simple-get',
       upstreamUrl: new URL(`/users/${PROFILE_NAME}`, GITHUB_API_HOST).toString(),
       ttlSeconds: CACHE_TTL_SECONDS.user,
-      // Static key for the same reason as the contributions route: the response
-      // doesn't vary per-request, and keying on `request.url` let any query
-      // string mint a fresh entry, turning every `?x=1` into an upstream call
-      // against the token's hourly quota.
+      maxStaleSeconds: MAX_STALE_SECONDS.user,
       cacheKey: 'https://cache.internal/rustatian-me/user-v1',
-      contentType: 'application/json; charset=UTF-8',
       transform: transformUser,
     };
   }
@@ -272,37 +257,20 @@ const resolveGitHubRoute = (pathname: string): UpstreamRoute | null => {
     return {
       kind: 'graphql-post',
       upstreamUrl: new URL('/graphql', GITHUB_API_HOST).toString(),
-      // One refresh per day — the GitHub calendar rolls over at UTC midnight and
-      // the grid is purely decorative between rollovers. Short-circuits every
-      // subsequent browser tab for the next 24h.
+      // One refresh per day: the GitHub calendar rolls over at UTC midnight and
+      // the grid is purely decorative between rollovers.
       ttlSeconds: CACHE_TTL_SECONDS.contributions,
-      // Allow up to a week of stale on outage; past that, fail loudly rather
-      // than paint a calendar that's a month out of date.
       maxStaleSeconds: MAX_STALE_SECONDS.contributions,
-      // Static key so all visitors share one cached entry regardless of the
-      // request URL they arrived at. The Workers Cache API wants a full URL.
       cacheKey: 'https://cache.internal/rustatian-me/contributions-v1',
-      contentType: 'application/json; charset=UTF-8',
       body: JSON.stringify({
         query: CONTRIBUTIONS_QUERY,
         variables: { login: PROFILE_NAME },
       }),
-      bodyContentType: 'application/json',
       transform: transformContributions,
     };
   }
 
   return null;
-};
-
-// Upper bound on how long the edge may retain an entry past its freshness
-// deadline. Routes with no `maxStaleSeconds` mean "serve stale indefinitely",
-// which no cache-control can express, so clamp to something finite.
-const EDGE_RETENTION_CAP_SECONDS = 60 * 60 * 24 * 30;
-
-const resolveEdgeRetentionSeconds = (route: UpstreamRoute): number => {
-  const stale = route.maxStaleSeconds ?? EDGE_RETENTION_CAP_SECONDS;
-  return Math.min(route.ttlSeconds + stale, EDGE_RETENTION_CAP_SECONDS);
 };
 
 const createTimeoutSignal = (): AbortSignal | undefined => {
@@ -313,47 +281,101 @@ const createTimeoutSignal = (): AbortSignal | undefined => {
   return undefined;
 };
 
-const getEdgeCache = async (): Promise<Cache> => caches.open('github-proxy-cache');
+const upstreamErrorResponse = (error: unknown, requestId: string): Response => {
+  if (error instanceof UpstreamRequestError && error.reason === 'http') {
+    return buildApiErrorResponse(
+      502,
+      {
+        error: {
+          code: 'UPSTREAM_ERROR',
+          message: `GitHub upstream responded with status ${error.status}`,
+          requestId,
+          upstreamStatus: error.status,
+        },
+      },
+      requestId,
+    );
+  }
 
-const fetchAndCacheGitHubResource = async (
+  // Body and GraphQL failures arrive with HTTP 200, so they carry no
+  // `upstreamStatus`. GitHub's GraphQL error text enumerates the scopes the
+  // site's own token holds, so the message is synthesized; the raw text stays
+  // in the log.
+  const message =
+    error instanceof UpstreamRequestError
+      ? 'GitHub upstream returned an unexpected response'
+      : error instanceof GraphQLResponseError
+        ? 'GitHub GraphQL request failed'
+        : 'Failed to fetch GitHub upstream resource';
+  return buildApiErrorResponse(
+    502,
+    { error: { code: 'UPSTREAM_ERROR', message, requestId } },
+    requestId,
+  );
+};
+
+// Lookup, freshness, refresh, store and stale fallback for one route. The
+// `x-edge-expires-at` stamp and `maxStaleSeconds` are written and read here only.
+const serveCachedUpstream = async (
   route: UpstreamRoute,
-  cacheRequest: Request,
   requestId: string,
-  staleResponse: Response | null,
   githubToken?: string,
 ): Promise<Response> => {
-  const cache = await getEdgeCache();
-  const upstreamHeaders: Record<string, string> = {
-    Accept: route.contentType.includes('json') ? 'application/json' : 'text/plain',
-    'User-Agent': 'rustatian.me/edge-proxy',
-  };
+  const cache = await caches.open(CACHE_NAME);
+  const cacheRequest = new Request(route.cacheKey, { method: 'GET' });
+  const cached = await cache.match(cacheRequest);
+  // The stored copy carries the edge retention window; browsers get the TTL.
+  const clientCacheControl = `public, max-age=${route.ttlSeconds}`;
+  let staleResponse: Response | null = null;
 
-  if (route.kind === 'graphql-post') {
-    upstreamHeaders['Content-Type'] = route.bodyContentType;
-    if (!githubToken) {
-      // GraphQL always requires a token; fail fast rather than burning a
-      // request we know GitHub will reject.
-      return buildApiErrorResponse(
-        502,
-        {
-          error: {
-            code: 'UPSTREAM_ERROR',
-            message: 'GitHub authentication token is not configured',
-            requestId,
-          },
-        },
-        requestId,
-      );
+  if (cached) {
+    const expiresAt = Number(cached.headers.get(CACHE_EXPIRES_HEADER) ?? '0');
+    const now = Date.now();
+
+    if (Number.isFinite(expiresAt) && expiresAt > now) {
+      return cloneResponseWithHeaders(cached, {
+        'cache-control': clientCacheControl,
+        [CACHE_STATUS_HEADER]: 'HIT',
+        [REQUEST_ID_HEADER]: requestId,
+      });
+    }
+
+    if (now - expiresAt <= route.maxStaleSeconds * 1000) {
+      staleResponse = cached;
     }
   }
 
+  if (route.kind === 'graphql-post' && !githubToken) {
+    // GraphQL always requires a token; fail fast rather than burning a
+    // request we know GitHub will reject.
+    return buildApiErrorResponse(
+      502,
+      {
+        error: {
+          code: 'UPSTREAM_ERROR',
+          message: 'GitHub authentication token is not configured',
+          requestId,
+        },
+      },
+      requestId,
+    );
+  }
+
+  const upstreamHeaders: Record<string, string> = {
+    Accept: 'application/json',
+    'User-Agent': 'rustatian.me/edge-proxy',
+  };
   if (githubToken) {
-    upstreamHeaders['Authorization'] = `Bearer ${githubToken}`;
+    upstreamHeaders.Authorization = `Bearer ${githubToken}`;
   }
 
   const requestInit: RequestInit =
     route.kind === 'graphql-post'
-      ? { method: 'POST', headers: upstreamHeaders, body: route.body }
+      ? {
+          method: 'POST',
+          headers: { ...upstreamHeaders, 'Content-Type': 'application/json' },
+          body: route.body,
+        }
       : { method: 'GET', headers: upstreamHeaders };
 
   const timeoutSignal = createTimeoutSignal();
@@ -368,39 +390,29 @@ const fetchAndCacheGitHubResource = async (
       throw new UpstreamRequestError(upstreamResponse.status);
     }
 
-    const rawBody = await upstreamResponse.text();
-    const body = route.transform(rawBody);
+    const body = route.transform(await upstreamResponse.text());
     const headers = new Headers({
-      'content-type': route.contentType,
-      'cache-control': `public, max-age=${route.ttlSeconds}`,
+      'content-type': JSON_CONTENT_TYPE,
+      'cache-control': clientCacheControl,
       [CACHE_EXPIRES_HEADER]: String(Date.now() + route.ttlSeconds * 1000),
       [CACHE_STATUS_HEADER]: 'MISS',
       [REQUEST_ID_HEADER]: requestId,
     });
-
     applySecurityHeaders(headers, false);
 
-    const response = new Response(body, {
-      status: 200,
-      headers,
-    });
-
-    // The stored copy must outlive its own freshness window. Cloudflare evicts
-    // on the *stored* `cache-control`, so persisting the client-facing max-age
-    // would drop the entry at the exact moment `x-edge-expires-at` marks it
-    // stale — making `maxStaleSeconds` and the whole serve-stale-on-outage path
-    // unreachable. `x-edge-expires-at` is this worker's freshness deadline;
-    // the stored max-age only has to keep the bytes alive long enough to reach
-    // it. (s-maxage behaves identically here and is not an alternative.)
+    // Cloudflare evicts on the *stored* cache-control, so the stored copy must
+    // outlive the freshness deadline by the stale window.
     const cacheHeaders = new Headers(headers);
-    cacheHeaders.set('cache-control', `public, max-age=${resolveEdgeRetentionSeconds(route)}`);
+    cacheHeaders.set(
+      'cache-control',
+      `public, max-age=${route.ttlSeconds + route.maxStaleSeconds}`,
+    );
     await cache.put(cacheRequest, new Response(body, { status: 200, headers: cacheHeaders }));
-    return response;
+    return new Response(body, { status: 200, headers });
   } catch (error) {
-    // Log every failure before deciding whether to serve stale. Without this,
-    // a warm edge cache would mask schema drift or auth failures forever —
-    // the stale-fallback path is intentionally silent at the HTTP level, so
-    // observability has to happen here.
+    // Log every failure before deciding whether to serve stale. A warm edge
+    // cache would otherwise mask schema drift or auth failures forever: the
+    // stale path is silent at the HTTP level.
     const logPayload: Record<string, unknown> = {
       type:
         error instanceof GraphQLResponseError
@@ -414,65 +426,23 @@ const fetchAndCacheGitHubResource = async (
       error: error instanceof Error ? { name: error.name, message: error.message } : String(error),
     };
     if (error instanceof GraphQLResponseError) {
-      logPayload['graphqlErrors'] = error.graphqlErrors;
+      logPayload.graphqlErrors = error.graphqlErrors;
     } else if (error instanceof UpstreamRequestError) {
-      logPayload['upstreamStatus'] = error.status;
-      logPayload['reason'] = error.reason;
-      if (error.issues !== undefined) logPayload['issues'] = error.issues;
+      logPayload.upstreamStatus = error.status;
+      logPayload.reason = error.reason;
+      if (error.issues !== undefined) logPayload.issues = error.issues;
     }
     console.error(JSON.stringify(logPayload));
 
     if (staleResponse) {
       return cloneResponseWithHeaders(staleResponse, {
+        'cache-control': clientCacheControl,
         [CACHE_STATUS_HEADER]: 'STALE',
         [REQUEST_ID_HEADER]: requestId,
       });
     }
 
-    if (error instanceof UpstreamRequestError) {
-      return buildApiErrorResponse(
-        502,
-        {
-          error: {
-            code: 'UPSTREAM_ERROR',
-            message: `GitHub upstream responded with status ${error.status}`,
-            requestId,
-            upstreamStatus: error.status,
-          },
-        },
-        requestId,
-      );
-    }
-
-    if (error instanceof GraphQLResponseError) {
-      // Upstream HTTP was 200 — no `upstreamStatus` so the client isn't
-      // misled into thinking GitHub returned a 5xx. The message is synthesized
-      // rather than relayed: GitHub's GraphQL error text enumerates the scopes
-      // the site's own token holds. The raw text stays in the log payload above.
-      return buildApiErrorResponse(
-        502,
-        {
-          error: {
-            code: 'UPSTREAM_ERROR',
-            message: 'GitHub GraphQL request failed',
-            requestId,
-          },
-        },
-        requestId,
-      );
-    }
-
-    return buildApiErrorResponse(
-      502,
-      {
-        error: {
-          code: 'UPSTREAM_ERROR',
-          message: 'Failed to fetch GitHub upstream resource',
-          requestId,
-        },
-      },
-      requestId,
-    );
+    return upstreamErrorResponse(error, requestId);
   }
 };
 
@@ -554,9 +524,7 @@ const handleGitHubApiRequest = async (request: Request, env: Env): Promise<Respo
     );
   }
 
-  const url = new URL(request.url);
-
-  const route = resolveGitHubRoute(url.pathname);
+  const route = resolveGitHubRoute(new URL(request.url).pathname);
 
   if (!route) {
     return buildApiErrorResponse(
@@ -572,41 +540,7 @@ const handleGitHubApiRequest = async (request: Request, env: Env): Promise<Respo
     );
   }
 
-  const cache = await getEdgeCache();
-  const cacheUrl = route.cacheKey ?? request.url;
-  const cacheRequest = new Request(cacheUrl, { method: 'GET' });
-  const cachedResponse = await cache.match(cacheRequest);
-  let staleResponse: Response | null = null;
-
-  if (cachedResponse) {
-    const expiresAt = Number(cachedResponse.headers.get(CACHE_EXPIRES_HEADER) ?? '0');
-    const now = Date.now();
-
-    if (Number.isFinite(expiresAt) && expiresAt > now) {
-      return cloneResponseWithHeaders(cachedResponse, {
-        [CACHE_STATUS_HEADER]: 'HIT',
-        [REQUEST_ID_HEADER]: requestId,
-      });
-    }
-
-    // Enforce the stale cap so a broken token / dead upstream can't pin us on
-    // fossilised data indefinitely — past the window, refuse to serve stale
-    // and let the refresh-path error bubble to the client.
-    const maxStaleMs =
-      route.maxStaleSeconds !== undefined ? route.maxStaleSeconds * 1000 : Number.POSITIVE_INFINITY;
-    const stalenessMs = now - expiresAt;
-    if (stalenessMs <= maxStaleMs) {
-      staleResponse = cachedResponse;
-    }
-  }
-
-  return fetchAndCacheGitHubResource(
-    route,
-    cacheRequest,
-    requestId,
-    staleResponse,
-    env.GITHUB_TOKEN,
-  );
+  return serveCachedUpstream(route, requestId, env.GITHUB_TOKEN);
 };
 
 export default {
