@@ -14,7 +14,6 @@ const About = () => {
       <Seo
         title="about · rustatian"
         description="About Valery 'rustatian' Piashchynski: staff backend engineer, distributed systems, open source."
-        path="/about/"
       />
 
       <PageHeader

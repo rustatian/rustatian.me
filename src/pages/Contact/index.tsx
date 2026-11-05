@@ -10,7 +10,6 @@ const Contact = () => (
     <Seo
       title="contact · rustatian"
       description="Say hello — best reached by email for anything substantive, or by GitHub, LinkedIn, Twitch, YouTube for short-form."
-      path="/contact/"
     />
 
     <PageHeader
