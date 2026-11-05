@@ -24,12 +24,12 @@ export const transformUser = (rawBody: string): string => {
   try {
     parsedJson = JSON.parse(rawBody);
   } catch {
-    throw new UpstreamRequestError(502, 'parse');
+    throw new UpstreamRequestError(200, 'parse');
   }
 
   const result = GitHubUserResponseSchema.safeParse(parsedJson);
   if (!result.success) {
-    throw new UpstreamRequestError(502, 'schema', result.error.issues);
+    throw new UpstreamRequestError(200, 'schema', result.error.issues);
   }
 
   const { login, public_repos, followers, following } = result.data;

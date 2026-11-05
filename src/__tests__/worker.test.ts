@@ -188,31 +188,49 @@ describe('worker GitHub proxy API', () => {
     expect(Object.keys(body).sort()).toEqual(['followers', 'following', 'login', 'public_repos']);
   });
 
-  it('stores the edge copy with a longer max-age than it serves to clients', async () => {
-    const { cacheStorage, store } = createMockCache();
-    (globalThis as { caches: CacheStorage }).caches = cacheStorage;
+  const retention = [
+    {
+      name: 'user: 10 minutes fresh plus a 7-day stale window',
+      path: '/api/v1/github/user',
+      upstream: JSON.stringify(githubUserPayload()),
+      served: 'public, max-age=600',
+      stored: `public, max-age=${600 + 604800}`,
+    },
+    {
+      name: 'contributions: 24 hours fresh plus a 7-day stale window',
+      path: '/api/v1/github/contributions',
+      upstream: JSON.stringify(graphqlCalendarPayload()),
+      served: 'public, max-age=86400',
+      stored: `public, max-age=${86400 + 604800}`,
+    },
+  ];
 
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify(graphqlCalendarPayload()), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
+  // Cloudflare evicts on the *stored* cache-control. Storing the client-facing
+  // max-age would drop the entry exactly when x-edge-expires-at marks it stale,
+  // making the serve-stale-on-outage path unreachable.
+  it.each(retention)(
+    'stores the edge copy for the TTL plus the stale window ($name)',
+    async ({ path, upstream, served, stored }) => {
+      const { cacheStorage, store } = createMockCache();
+      (globalThis as { caches: CacheStorage }).caches = cacheStorage;
 
-    const served = await worker.fetch(
-      new Request('https://rustatian.me/api/v1/github/contributions'),
-      createEnv(undefined, { GITHUB_TOKEN: 'test-token' }),
-    );
-    expect(served.headers.get('cache-control')).toBe('public, max-age=86400');
+      fetchMock.mockResolvedValueOnce(
+        new Response(upstream, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
 
-    // Cloudflare evicts on the *stored* cache-control. Storing the client-facing
-    // 24h max-age would drop the entry exactly when x-edge-expires-at marks it
-    // stale, making the serve-stale-on-outage path unreachable. The stored copy
-    // must cover the TTL plus the 7-day stale window.
-    const stored = [...store.values()][0];
-    expect(stored).toBeDefined();
-    expect(stored?.headers.get('cache-control')).toBe(`public, max-age=${86400 + 604800}`);
-  });
+      const response = await worker.fetch(
+        new Request(`https://rustatian.me${path}`),
+        createEnv(undefined, { GITHUB_TOKEN: 'test-token' }),
+      );
+      expect(response.headers.get('cache-control')).toBe(served);
+
+      const entry = [...store.values()][0];
+      expect(entry?.headers.get('cache-control')).toBe(stored);
+    },
+  );
 
   it('shares one cache entry for /user regardless of query string', async () => {
     const { cacheStorage } = createMockCache();
@@ -236,6 +254,8 @@ describe('worker GitHub proxy API', () => {
     // every request into an upstream call against the token's hourly quota.
     expect(busted.headers.get('x-cache')).toBe('HIT');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    // The browser gets the TTL, not the edge retention window.
+    expect(busted.headers.get('cache-control')).toBe('public, max-age=600');
   });
 
   it('returns 404 for retired /blog routes (no longer proxied)', async () => {
@@ -337,9 +357,83 @@ describe('worker GitHub proxy API', () => {
     const staleResponse = await worker.fetch(request, env);
     expect(staleResponse.status).toBe(200);
     expect(staleResponse.headers.get('x-cache')).toBe('STALE');
+    expect(staleResponse.headers.get('cache-control')).toBe('public, max-age=600');
     expect(await staleResponse.json()).toMatchObject({ login: 'rustatian' });
 
     nowSpy.mockRestore();
+  });
+
+  const staleWindow = [
+    {
+      name: 'inside the stale window a failed refresh serves the stale copy',
+      elapsedMs: 86_400_000 + 604_800_000 - 1000,
+      status: 200,
+      cacheStatus: 'STALE',
+    },
+    {
+      name: 'past the stale window a failed refresh surfaces as 502',
+      elapsedMs: 86_400_000 + 604_800_000 + 1000,
+      status: 502,
+      cacheStatus: null,
+    },
+  ];
+
+  it.each(staleWindow)('$name', async ({ elapsedMs, status, cacheStatus }) => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { cacheStorage } = createMockCache();
+    (globalThis as { caches: CacheStorage }).caches = cacheStorage;
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(graphqlCalendarPayload()), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    const env = createEnv(undefined, { GITHUB_TOKEN: 'test-token' });
+    const req = () => new Request('https://rustatian.me/api/v1/github/contributions');
+
+    expect((await worker.fetch(req(), env)).headers.get('x-cache')).toBe('MISS');
+
+    nowSpy.mockReturnValue(1_000_000 + elapsedMs);
+    fetchMock.mockRejectedValueOnce(new Error('network down'));
+
+    const response = await worker.fetch(req(), env);
+    expect(response.status).toBe(status);
+    expect(response.headers.get('x-cache')).toBe(cacheStatus);
+
+    errorSpy.mockRestore();
+    nowSpy.mockRestore();
+  });
+
+  it('reports schema drift as an unexpected response, not as an upstream status', async () => {
+    const { cacheStorage } = createMockCache();
+    (globalThis as { caches: CacheStorage }).caches = cacheStorage;
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ login: 'rustatian' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await worker.fetch(
+      new Request('https://rustatian.me/api/v1/github/user'),
+      createEnv(),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: 'UPSTREAM_ERROR',
+        message: 'GitHub upstream returned an unexpected response',
+        requestId: expect.any(String),
+      },
+    });
+    errorSpy.mockRestore();
   });
 
   it('logs non-upstream-HTTP fetch failures (network, timeout) with no stale cache', async () => {

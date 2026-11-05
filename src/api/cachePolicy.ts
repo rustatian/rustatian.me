@@ -9,5 +9,6 @@ export const CACHE_TTL_SECONDS = {
 
 // How long a stale entry may still be served when the upstream refresh fails.
 export const MAX_STALE_SECONDS = {
+  user: 60 * 60 * 24 * 7,
   contributions: 60 * 60 * 24 * 7,
 } as const;
