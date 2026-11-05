@@ -3,7 +3,8 @@ import type { Plugin } from 'vite';
 import path from 'path';
 import preact from '@preact/preset-vite';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { sitemapXml } from './src/routes';
+// Extensions keep Vite's native config loader happy.
+import { sitemapXml } from './src/routes.ts';
 
 // Emits sitemap.xml from the page table, next to the prerendered pages.
 const sitemap = (): Plugin => ({
@@ -64,9 +65,8 @@ export default defineConfig(({ mode }) => {
       // packages with both export conditions (react, etc.) resolve correctly.
       conditions: mode === 'production' ? ['module', 'production'] : ['module', 'development'],
       alias: {
-        '@': path.resolve(__dirname, './src'),
-        '@components': path.resolve(__dirname, './src/components'),
-        '@pages': path.resolve(__dirname, './src/pages'),
+        '@': path.resolve(import.meta.dirname, './src'),
+        '@pages': path.resolve(import.meta.dirname, './src/pages'),
         'react': 'preact/compat',
         'react-dom': 'preact/compat',
       },

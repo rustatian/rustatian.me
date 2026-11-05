@@ -25,9 +25,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@components': path.resolve(__dirname, './src/components'),
-      '@pages': path.resolve(__dirname, './src/pages'),
+      '@': path.resolve(import.meta.dirname, './src'),
+      '@pages': path.resolve(import.meta.dirname, './src/pages'),
       react: 'preact/compat',
       'react/jsx-runtime': 'preact/jsx-runtime',
       'react-dom/test-utils': 'preact/test-utils',

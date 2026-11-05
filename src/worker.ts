@@ -2,7 +2,7 @@
 
 import { CACHE_TTL_SECONDS, MAX_STALE_SECONDS } from './api/cachePolicy';
 import type { ErrorEnvelope } from './api/contracts';
-import { API_BASE_PATH, CSP_REPORT_PATH } from './api/routes';
+import { API_BASE_PATH, CSP_REPORT_PATH, routes } from './api/routes';
 import { PROFILE_NAME } from './constants';
 import { TokenBucket } from './utils/rateLimiter';
 import { CONTRIBUTIONS_QUERY, transformContributions } from './worker/contributions';
@@ -120,14 +120,6 @@ const applySecurityHeaders = (headers: Headers, includeCSP = false): void => {
   headers.set('cross-origin-resource-policy', 'same-origin');
 };
 
-const createRequestId = (): string => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-};
-
 const buildApiErrorResponse = (
   status: number,
   code: WorkerErrorCode,
@@ -218,7 +210,7 @@ const isStaticAssetPath = (pathname: string): boolean => {
 };
 
 const resolveGitHubRoute = (pathname: string): UpstreamRoute | null => {
-  if (pathname === `${API_BASE_PATH}/user`) {
+  if (pathname === routes.githubUser) {
     return {
       kind: 'simple-get',
       upstreamUrl: new URL(`/users/${PROFILE_NAME}`, GITHUB_API_HOST).toString(),
@@ -229,7 +221,7 @@ const resolveGitHubRoute = (pathname: string): UpstreamRoute | null => {
     };
   }
 
-  if (pathname === `${API_BASE_PATH}/contributions`) {
+  if (pathname === routes.githubContributions) {
     return {
       kind: 'graphql-post',
       upstreamUrl: new URL('/graphql', GITHUB_API_HOST).toString(),
@@ -247,14 +239,6 @@ const resolveGitHubRoute = (pathname: string): UpstreamRoute | null => {
   }
 
   return null;
-};
-
-const createTimeoutSignal = (): AbortSignal | undefined => {
-  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-    return AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-  }
-
-  return undefined;
 };
 
 const upstreamErrorResponse = (error: unknown, requestId: string): Response => {
@@ -331,11 +315,7 @@ const serveCachedUpstream = async (
           body: route.body,
         }
       : { method: 'GET', headers: upstreamHeaders };
-
-  const timeoutSignal = createTimeoutSignal();
-  if (timeoutSignal) {
-    requestInit.signal = timeoutSignal;
-  }
+  requestInit.signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 
   try {
     const upstreamResponse = await fetch(route.upstreamUrl, requestInit);
@@ -404,7 +384,7 @@ const serveCachedUpstream = async (
 const CSP_REPORT_MAX_CHARS = 2000;
 
 const handleCspReportRequest = async (request: Request): Promise<Response> => {
-  const requestId = createRequestId();
+  const requestId = crypto.randomUUID();
 
   if (request.method !== 'POST') {
     // RFC 9110 §15.5.6: a 405 MUST carry Allow.
@@ -450,7 +430,7 @@ const handleCspReportRequest = async (request: Request): Promise<Response> => {
 };
 
 const handleGitHubApiRequest = async (request: Request, env: Env): Promise<Response> => {
-  const requestId = createRequestId();
+  const requestId = crypto.randomUUID();
 
   const clientIp = getClientIp(request);
   if (!RATE_LIMIT_BUCKET.tryConsume(clientIp)) {
