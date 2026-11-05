@@ -313,13 +313,9 @@ const serveCachedUpstream = async (
           method: 'POST',
           headers: { ...upstreamHeaders, 'Content-Type': 'application/json' },
           body: route.body,
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         }
-      : {
-          method: 'GET',
-          headers: upstreamHeaders,
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        };
+      : { method: 'GET', headers: upstreamHeaders };
+  requestInit.signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 
   try {
     const upstreamResponse = await fetch(route.upstreamUrl, requestInit);
