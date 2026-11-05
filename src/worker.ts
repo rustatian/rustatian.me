@@ -31,15 +31,6 @@ interface Env {
 
 type WorkerErrorCode = 'RATE_LIMITED' | 'METHOD_NOT_ALLOWED' | 'UPSTREAM_ERROR' | 'NOT_FOUND';
 
-interface WorkerApiErrorBody {
-  error: {
-    code: WorkerErrorCode;
-    message: string;
-    requestId: string;
-    upstreamStatus?: number;
-  };
-}
-
 interface UpstreamRouteBase {
   upstreamUrl: string;
   ttlSeconds: number;
@@ -136,45 +127,33 @@ const createRequestId = (): string => {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
+// The envelope the client parses. It reads only `message`; `code` and
+// `requestId` serve debugging with curl.
 const buildApiErrorResponse = (
   status: number,
-  payload: WorkerApiErrorBody,
+  code: WorkerErrorCode,
+  message: string,
   requestId: string,
-  extraHeaders?: Record<string, string>,
+  extraHeaders: Record<string, string> = {},
 ): Response => {
   const headers = new Headers({
     'content-type': JSON_CONTENT_TYPE,
     'cache-control': 'no-store',
     [REQUEST_ID_HEADER]: requestId,
+    ...extraHeaders,
   });
-
-  if (extraHeaders) {
-    for (const [key, value] of Object.entries(extraHeaders)) {
-      headers.set(key, value);
-    }
-  }
-
   applySecurityHeaders(headers, false);
 
-  return new Response(JSON.stringify(payload), {
+  return new Response(JSON.stringify({ error: { code, message, requestId } }), {
     status,
     headers,
   });
 };
 
 const buildRateLimitResponse = (requestId: string): Response =>
-  buildApiErrorResponse(
-    429,
-    {
-      error: {
-        code: 'RATE_LIMITED',
-        message: 'Too many requests — please slow down',
-        requestId,
-      },
-    },
-    requestId,
-    { 'retry-after': '1' },
-  );
+  buildApiErrorResponse(429, 'RATE_LIMITED', 'Too many requests — please slow down', requestId, {
+    'retry-after': '1',
+  });
 
 const cloneResponseWithHeaders = (
   response: Response,
@@ -282,36 +261,19 @@ const createTimeoutSignal = (): AbortSignal | undefined => {
 };
 
 const upstreamErrorResponse = (error: unknown, requestId: string): Response => {
-  if (error instanceof UpstreamRequestError && error.reason === 'http') {
-    return buildApiErrorResponse(
-      502,
-      {
-        error: {
-          code: 'UPSTREAM_ERROR',
-          message: `GitHub upstream responded with status ${error.status}`,
-          requestId,
-          upstreamStatus: error.status,
-        },
-      },
-      requestId,
-    );
-  }
-
-  // Body and GraphQL failures arrive with HTTP 200, so they carry no
-  // `upstreamStatus`. GitHub's GraphQL error text enumerates the scopes the
-  // site's own token holds, so the message is synthesized; the raw text stays
-  // in the log.
+  // Body and GraphQL failures arrive with HTTP 200, so only an upstream HTTP
+  // error names a status. GitHub's GraphQL error text enumerates the scopes
+  // the site's own token holds, so the message is synthesized; the raw text
+  // stays in the log.
   const message =
     error instanceof UpstreamRequestError
-      ? 'GitHub upstream returned an unexpected response'
+      ? error.reason === 'http'
+        ? `GitHub upstream responded with status ${error.status}`
+        : 'GitHub upstream returned an unexpected response'
       : error instanceof GraphQLResponseError
         ? 'GitHub GraphQL request failed'
         : 'Failed to fetch GitHub upstream resource';
-  return buildApiErrorResponse(
-    502,
-    { error: { code: 'UPSTREAM_ERROR', message, requestId } },
-    requestId,
-  );
+  return buildApiErrorResponse(502, 'UPSTREAM_ERROR', message, requestId);
 };
 
 // Lookup, freshness, refresh, store and stale fallback for one route. The
@@ -350,13 +312,8 @@ const serveCachedUpstream = async (
     // request we know GitHub will reject.
     return buildApiErrorResponse(
       502,
-      {
-        error: {
-          code: 'UPSTREAM_ERROR',
-          message: 'GitHub authentication token is not configured',
-          requestId,
-        },
-      },
+      'UPSTREAM_ERROR',
+      'GitHub authentication token is not configured',
       requestId,
     );
   }
@@ -453,17 +410,12 @@ const handleCspReportRequest = async (request: Request): Promise<Response> => {
   const requestId = createRequestId();
 
   if (request.method !== 'POST') {
+    // RFC 9110 §15.5.6: a 405 MUST carry Allow.
     return buildApiErrorResponse(
       405,
-      {
-        error: {
-          code: 'METHOD_NOT_ALLOWED',
-          message: 'Only POST is supported for csp-report',
-          requestId,
-        },
-      },
+      'METHOD_NOT_ALLOWED',
+      'Only POST is supported for csp-report',
       requestId,
-      // RFC 9110 §15.5.6: a 405 MUST carry Allow.
       { allow: 'POST' },
     );
   }
@@ -509,17 +461,12 @@ const handleGitHubApiRequest = async (request: Request, env: Env): Promise<Respo
   }
 
   if (request.method !== 'GET') {
+    // RFC 9110 §15.5.6: a 405 MUST carry Allow.
     return buildApiErrorResponse(
       405,
-      {
-        error: {
-          code: 'METHOD_NOT_ALLOWED',
-          message: 'Only GET is supported for this endpoint',
-          requestId,
-        },
-      },
+      'METHOD_NOT_ALLOWED',
+      'Only GET is supported for this endpoint',
       requestId,
-      // RFC 9110 §15.5.6: a 405 MUST carry Allow.
       { allow: 'GET' },
     );
   }
@@ -527,17 +474,7 @@ const handleGitHubApiRequest = async (request: Request, env: Env): Promise<Respo
   const route = resolveGitHubRoute(new URL(request.url).pathname);
 
   if (!route) {
-    return buildApiErrorResponse(
-      404,
-      {
-        error: {
-          code: 'NOT_FOUND',
-          message: 'Endpoint not found',
-          requestId,
-        },
-      },
-      requestId,
-    );
+    return buildApiErrorResponse(404, 'NOT_FOUND', 'Endpoint not found', requestId);
   }
 
   return serveCachedUpstream(route, requestId, env.GITHUB_TOKEN);

@@ -290,24 +290,6 @@ describe('worker GitHub proxy API', () => {
     expect(response.status).toBe(404);
   });
 
-  it('rejects unsupported methods for API endpoints', async () => {
-    const { cacheStorage } = createMockCache();
-    (globalThis as { caches: CacheStorage }).caches = cacheStorage;
-
-    const env = createEnv();
-    const response = await worker.fetch(
-      new Request('https://rustatian.me/api/v1/github/user', { method: 'POST' }),
-      env,
-    );
-
-    expect(response.status).toBe(405);
-    await expect(response.json()).resolves.toMatchObject({
-      error: {
-        code: 'METHOD_NOT_ALLOWED',
-      },
-    });
-  });
-
   it('maps upstream HTTP errors into normalized Worker API errors', async () => {
     const { cacheStorage } = createMockCache();
     (globalThis as { caches: CacheStorage }).caches = cacheStorage;
@@ -321,13 +303,58 @@ describe('worker GitHub proxy API', () => {
     );
 
     expect(response.status).toBe(502);
-    await expect(response.json()).resolves.toMatchObject({
+    await expect(response.json()).resolves.toEqual({
       error: {
         code: 'UPSTREAM_ERROR',
-        upstreamStatus: 404,
+        message: 'GitHub upstream responded with status 404',
+        requestId: expect.any(String),
       },
     });
   });
+
+  const apiErrors = [
+    {
+      name: 'unknown API route',
+      request: () => new Request('https://rustatian.me/api/v1/github/nope'),
+      status: 404,
+      code: 'NOT_FOUND',
+    },
+    {
+      name: 'unsupported method on the API',
+      request: () => new Request('https://rustatian.me/api/v1/github/user', { method: 'POST' }),
+      status: 405,
+      code: 'METHOD_NOT_ALLOWED',
+    },
+    {
+      name: 'GET on the csp-report sink',
+      request: () => new Request('https://rustatian.me/api/v1/csp-report'),
+      status: 405,
+      code: 'METHOD_NOT_ALLOWED',
+    },
+    {
+      name: 'GraphQL route without a token',
+      request: () => new Request('https://rustatian.me/api/v1/github/contributions'),
+      status: 502,
+      code: 'UPSTREAM_ERROR',
+    },
+  ];
+
+  it.each(apiErrors)(
+    '$name: one request id in the body and the header',
+    async ({ request, status, code }) => {
+      const { cacheStorage } = createMockCache();
+      (globalThis as { caches: CacheStorage }).caches = cacheStorage;
+
+      const response = await worker.fetch(request(), createEnv());
+
+      expect(response.status).toBe(status);
+      expect(response.headers.get('content-type')).toBe('application/json; charset=UTF-8');
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      const body = (await response.json()) as { error: { code: string; requestId: string } };
+      expect(body.error.code).toBe(code);
+      expect(body.error.requestId).toBe(response.headers.get('x-request-id'));
+    },
+  );
 
   it('serves stale cache when upstream refresh fails', async () => {
     const nowSpy = vi.spyOn(Date, 'now');
@@ -601,7 +628,7 @@ describe('worker GitHub proxy API', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('returns 502 without misleading upstreamStatus when GraphQL returns errors[]', async () => {
+  it('returns 502 with a synthesized message when GraphQL returns errors[]', async () => {
     const { cacheStorage } = createMockCache();
     (globalThis as { caches: CacheStorage }).caches = cacheStorage;
 
@@ -620,16 +647,15 @@ describe('worker GitHub proxy API', () => {
     );
 
     expect(response.status).toBe(502);
-    const body = (await response.json()) as {
-      error: { code: string; message: string; upstreamStatus?: number };
-    };
-    expect(body.error.code).toBe('UPSTREAM_ERROR');
-    // Upstream HTTP was 200 — must not claim it was a 502 from GitHub.
-    expect(body.error.upstreamStatus).toBeUndefined();
     // GitHub's GraphQL error text enumerates the scopes the site's own token
     // holds, so the client-facing message is synthesized, not relayed.
-    expect(body.error.message).toBe('GitHub GraphQL request failed');
-    expect(body.error.message).not.toContain('Bad credentials');
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: 'UPSTREAM_ERROR',
+        message: 'GitHub GraphQL request failed',
+        requestId: expect.any(String),
+      },
+    });
 
     // Error message and GraphQL payload must be logged (observability for
     // schema drift / bad-token issues that would otherwise be invisible).
@@ -1026,19 +1052,6 @@ describe('worker CSP report endpoint', () => {
     );
 
     expect(response.status).toBe(204);
-  });
-
-  it('rejects GET on /api/v1/csp-report with 405', async () => {
-    const env = createEnv();
-    const response = await worker.fetch(
-      new Request('https://rustatian.me/api/v1/csp-report', {
-        method: 'GET',
-        headers: { 'cf-connecting-ip': '203.0.113.21' },
-      }),
-      env,
-    );
-
-    expect(response.status).toBe(405);
   });
 
   it('applies rate limiting to csp-report POSTs per client IP', async () => {
