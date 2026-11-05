@@ -2,17 +2,12 @@ import type { ComponentChildren } from 'preact';
 import { useLocation } from 'preact-iso';
 import { ThemeToggle } from '@/components/ThemeToggle/ThemeToggle';
 import { GITHUB } from '@/constants';
+import { PAGES } from '@/routes';
 import styles from './Layout.module.css';
 
 interface LayoutProps {
   children: ComponentChildren;
 }
-
-const NAV_ITEMS = [
-  { path: '/', num: '01', label: 'home' },
-  { path: '/about', num: '02', label: 'about' },
-  { path: '/contact', num: '03', label: 'contact' },
-] as const;
 
 // Evaluated once per module load: at build time in Node for the prerendered
 // HTML, and again in the browser at page load. Across a year-boundary deploy the
@@ -35,17 +30,17 @@ export const Layout = ({ children }: LayoutProps) => {
             <span className={styles.path}>rustatian</span>
           </a>
           <div className={styles.links}>
-            {NAV_ITEMS.map(it => {
-              const current = path === it.path;
+            {PAGES.map((page, index) => {
+              const current = path === page.path;
               return (
                 <a
-                  key={it.path}
-                  href={it.path}
+                  key={page.path}
+                  href={page.path}
                   className={styles.link}
                   {...(current ? { 'aria-current': 'page' as const } : {})}
                 >
-                  <span className={styles.linkNum}>{it.num}</span>
-                  <span>{it.label}</span>
+                  <span className={styles.linkNum}>{String(index + 1).padStart(2, '0')}</span>
+                  <span>{page.label}</span>
                 </a>
               );
             })}

@@ -75,7 +75,7 @@ const Home = () => {
 
   return (
     <>
-      <Seo title="rustatian — home" description={PROFILE.bio} path="/" />
+      <Seo title="rustatian — home" description={PROFILE.bio} />
 
       <div className={`container route-enter ${styles.page}`}>
         <section className={styles.hero} aria-label="Intro">

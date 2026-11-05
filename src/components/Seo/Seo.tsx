@@ -1,13 +1,12 @@
 import { createContext } from 'preact';
 import { useContext, useEffect } from 'preact/hooks';
+import { useLocation } from 'preact-iso';
 import { OG_IMAGE_PATH, SITE_URL } from '@/constants';
+import { canonicalUrl } from '@/routes';
 
 interface SeoProps {
   title: string;
   description: string;
-  // Site-root-relative, with a trailing slash to match the prerendered output
-  // (`/about/`, not `/about`). Omit on pages that should not be indexed.
-  path?: string;
   noindex?: boolean;
 }
 
@@ -25,8 +24,10 @@ export const SeoCollector = createContext<{ head?: PageHead } | null>(null);
 
 const meta = (props: Record<string, string>) => ({ type: 'meta', props });
 
-const toHead = ({ title, description, path, noindex = false }: SeoProps): PageHead => {
-  const canonical = path ? `${SITE_URL}${path}` : undefined;
+const toHead = (
+  { title, description, noindex = false }: SeoProps,
+  canonical: string | undefined,
+): PageHead => {
   const image = `${SITE_URL}${OG_IMAGE_PATH}`;
   return {
     title,
@@ -50,8 +51,9 @@ const toHead = ({ title, description, path, noindex = false }: SeoProps): PageHe
 // Renders nothing. During prerender it fills the collector. On the client it
 // sets document.title for the current route.
 export const Seo = (props: SeoProps) => {
+  const { path } = useLocation();
   const collector = useContext(SeoCollector);
-  if (collector) collector.head = toHead(props);
+  if (collector) collector.head = toHead(props, canonicalUrl(path));
 
   useEffect(() => {
     document.title = props.title;

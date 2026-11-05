@@ -3,6 +3,15 @@ import type { Plugin } from 'vite';
 import path from 'path';
 import preact from '@preact/preset-vite';
 import { visualizer } from 'rollup-plugin-visualizer';
+import { sitemapXml } from './src/routes';
+
+// Emits sitemap.xml from the page table, next to the prerendered pages.
+const sitemap = (): Plugin => ({
+  name: 'sitemap',
+  generateBundle() {
+    this.emitFile({ type: 'asset', fileName: 'sitemap.xml', source: sitemapXml() });
+  },
+});
 
 export default defineConfig(({ mode }) => {
   const plugins: Plugin[] = [
@@ -10,11 +19,13 @@ export default defineConfig(({ mode }) => {
       prerender: {
         enabled: true,
         renderTarget: '#app',
-        additionalPrerenderRoutes: ['/about', '/contact', '/404'],
+        // The crawl reaches every linked page; /404 is unlinked and needs the entry.
+        additionalPrerenderRoutes: ['/404'],
         previewMiddlewareEnabled: true,
         previewMiddlewareFallback: '/404',
       },
     }) as unknown as Plugin,
+    sitemap(),
   ];
 
   // Set inline by the `build:analyze` script; no .env file feeds the build config.

@@ -22,7 +22,7 @@ Lint and format are **Biome**. There is no ESLint or Prettier despite what muscl
 Load-bearing constraints, none of which the code will teach you on its own:
 
 - **Every upstream route must project its response** (`src/worker/user.ts`, `src/worker/contributions.ts`). Upstream requests carry the site's token, so returning a body verbatim leaks fields GitHub only sends to the account owner. The `UpstreamRoute` type enforces this — don't work around it.
-- **The route list lives in three places that must stay in sync**: `src/components/AppRoutes/AppRoutes.tsx`, the prerender list in `vite.config.ts`, and `public/sitemap.xml`. Missing the vite entry ships a page with no prerendered HTML and no per-route meta, and nothing fails.
+- **The page list lives in `src/routes.ts`**. The router (`AppRoutes.tsx`), the nav (`Layout.tsx`), the canonical URLs (`Seo.tsx`) and the generated `sitemap.xml` (`vite.config.ts`) read it. vite-prerender-plugin follows every same-origin link it renders, so each linked page is prerendered without a prerender entry. The `/404` shell is the one route outside the table: `vite.config.ts` lists it for prerendering and `src/worker.ts` serves it for misses.
 - **The inline theme script in `index.html` is CSP-allowed by a sha256 hash** pinned as `THEME_BOOTSTRAP_HASH` in `src/worker.ts`. Editing that script — whitespace included — invalidates the hash and theme resolution silently stops. Recompute both together.
 - **Design tokens are `--s-*` / `--r-*` / `--fs-*` / `--fg-*` / `--bg-*` / `--bd-*`** (see `src/styles/tokens.css`). An invented token name produces a declaration the browser silently drops, so the styling just goes missing rather than erroring.
 
