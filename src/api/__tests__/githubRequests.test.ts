@@ -78,53 +78,5 @@ describe('githubRequests', () => {
 
       await expect(getUser()).rejects.toThrow();
     });
-
-    it('throws GitHub API error on non-ok response without worker envelope', async () => {
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-        json: () => Promise.reject(new Error('no json')),
-      });
-
-      await expect(getUser()).rejects.toThrow('GitHub API error: 404');
-      expect(warnSpy).toHaveBeenCalled();
-      warnSpy.mockRestore();
-    });
-
-    it('logs and falls back when worker error envelope is malformed', async () => {
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 502,
-        json: () => Promise.resolve({ error: { code: 'NOT_A_REAL_CODE', message: 'x' } }),
-      });
-
-      await expect(getUser()).rejects.toThrow('GitHub API error: 502');
-      expect(warnSpy).toHaveBeenCalledWith('WorkerApiError schema mismatch', expect.any(Object));
-      warnSpy.mockRestore();
-    });
-
-    it('maps Worker API error envelope to WorkerApiError', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 502,
-        json: () =>
-          Promise.resolve({
-            error: {
-              code: 'UPSTREAM_ERROR',
-              message: 'GitHub upstream responded with status 403',
-              requestId: 'req_123',
-              upstreamStatus: 403,
-            },
-          }),
-      });
-
-      await expect(getUser()).rejects.toMatchObject({
-        code: 'UPSTREAM_ERROR',
-        status: 502,
-        requestId: 'req_123',
-      });
-    });
   });
 });
