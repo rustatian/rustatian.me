@@ -4,7 +4,8 @@ import { routes } from './routes';
 
 // Only the fields the UI actually reads. The earlier 30-field schema coupled
 // the client to every upstream GitHub user bump — a new nullable field or a
-// renamed `gravatar_id` would fire an error toast for data no user sees.
+// renamed `gravatar_id` would put the stat cards into their error state for
+// data no user sees.
 // `looseObject` lets upstream additions pass through; required keys guard
 // the small set we genuinely depend on.
 const GitHubUserSchema = z.looseObject({
