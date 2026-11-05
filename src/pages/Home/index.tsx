@@ -1,4 +1,3 @@
-import { useEffect } from 'preact/hooks';
 import type { GitHubUser } from '@/api/githubRequests';
 import { Seo } from '@/components/Seo/Seo';
 import { Badge } from '@/components/ui/Badge';
@@ -8,7 +7,6 @@ import { SectionHead } from '@/components/ui/SectionHead';
 import { StatCard } from '@/components/ui/StatCard';
 import { PROFILE, STAT_DEFS, type Stat, type StatKey, TECH } from '@/data/profile';
 import { useGitHubContributions, useGitHubUser } from '@/hooks/useGitHub';
-import { useSetError } from '@/state/appContext/appContext';
 import { computeStreak } from '@/utils/computeStreak';
 import styles from './Home.module.css';
 
@@ -39,28 +37,17 @@ const statsFor = (mode: StatMode, user: UserLike | undefined): Stat[] => {
 const Home = () => {
   const userQuery = useGitHubUser();
   const contribQuery = useGitHubContributions();
-  const setError = useSetError();
-
-  // Relay both queries' errors into the global toast. Home is the only page
-  // that fetches these, so the relay is scoped here instead of firing requests
-  // on /about and /contact where the data isn't shown.
-  useEffect(() => {
-    if (userQuery.isError && userQuery.error) {
-      setError(userQuery.error);
-      return;
-    }
-    if (contribQuery.isError && contribQuery.error) {
-      setError(contribQuery.error);
-    }
-  }, [userQuery.isError, userQuery.error, contribQuery.isError, contribQuery.error, setError]);
 
   const statMode: StatMode = userQuery.isError ? 'error' : userQuery.data ? 'live' : 'loading';
   const stats = statsFor(statMode, userQuery.data);
-  const metaNote = userQuery.data
-    ? `// @${userQuery.data.login} · live`
-    : userQuery.isError
-      ? '// upstream error'
-      : '// loading /api/v1/github/user';
+  const metaNote = userQuery.data ? (
+    `// @${userQuery.data.login} · live`
+  ) : userQuery.isError ? (
+    // Announced to assistive technology, like the grid error state.
+    <span role="alert">{`// ${userQuery.error.message}`}</span>
+  ) : (
+    '// loading /api/v1/github/user'
+  );
 
   const contribProps: ContribGridProps = contribQuery.data
     ? {

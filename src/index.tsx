@@ -2,9 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { hydrate, LocationProvider, prerender as ssr } from 'preact-iso';
 import { AppRoutes } from './components/AppRoutes/AppRoutes';
 import { Layout } from './components/Layout/Layout';
-import { ErrorNotification } from './components/Notifications/ErrorNotification';
 import { type PageHead, SeoCollector } from './components/Seo/Seo';
-import { AppContextProvider } from './state/appContext/appContext';
 import './styles/tokens.css';
 import './styles/base.css';
 
@@ -20,12 +18,9 @@ const queryClient = new QueryClient({
 export const App = () => (
   <QueryClientProvider client={queryClient}>
     <LocationProvider>
-      <AppContextProvider>
-        <Layout>
-          <AppRoutes />
-        </Layout>
-        <ErrorNotification />
-      </AppContextProvider>
+      <Layout>
+        <AppRoutes />
+      </Layout>
     </LocationProvider>
   </QueryClientProvider>
 );

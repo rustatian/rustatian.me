@@ -70,7 +70,6 @@ src/
   data/        # 📇 Page content (profile, timeline, skills)
   hooks/       # 🪝 Custom hooks
   pages/       # 📄 Application pages
-  state/       # 🗃️ Global state
   styles/      # 🎨 Design tokens and global CSS
   utils/       # 🛠️ Utilities
   index.tsx    # 🚪 Client entry point + prerender hook

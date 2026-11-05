@@ -67,7 +67,6 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, './src'),
         '@components': path.resolve(__dirname, './src/components'),
         '@pages': path.resolve(__dirname, './src/pages'),
-        '@state': path.resolve(__dirname, './src/state'),
         'react': 'preact/compat',
         'react-dom': 'preact/compat',
       },

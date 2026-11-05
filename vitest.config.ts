@@ -28,7 +28,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
       '@components': path.resolve(__dirname, './src/components'),
       '@pages': path.resolve(__dirname, './src/pages'),
-      '@state': path.resolve(__dirname, './src/state'),
       react: 'preact/compat',
       'react/jsx-runtime': 'preact/jsx-runtime',
       'react-dom/test-utils': 'preact/test-utils',
