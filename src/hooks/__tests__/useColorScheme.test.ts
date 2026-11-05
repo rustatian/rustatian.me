@@ -1,8 +1,6 @@
 import { act, renderHook } from '@testing-library/preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useColorScheme } from '../useColorScheme';
-
-const STORAGE_KEY = 'rustatian-v2-theme';
+import { STORAGE_KEY, useColorScheme } from '../useColorScheme';
 
 const setSystemPrefersDark = (prefersDark: boolean) => {
   Object.defineProperty(window, 'matchMedia', {

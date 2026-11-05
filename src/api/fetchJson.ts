@@ -25,15 +25,6 @@ const errorFromResponse = async (response: Response): Promise<Error> => {
   return new Error(fallbackMessage);
 };
 
-// Feature-detect so SSR / older test envs don't crash on missing
-// `AbortSignal.timeout`. Modern browsers and Node 22+ support it natively.
-const createTimeoutSignal = (): AbortSignal | undefined => {
-  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-    return AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-  }
-  return undefined;
-};
-
 // Browser `fetch` surfaces network-level failures (DNS, offline, CORS
 // preflight, connection reset) as TypeError.
 const errorFromFetchFailure = (error: unknown): Error => {
@@ -43,9 +34,10 @@ const errorFromFetchFailure = (error: unknown): Error => {
 };
 
 export const fetchJson = async <T>(url: string, schema: z.ZodType<T>): Promise<T> => {
-  const init: RequestInit = { headers: { Accept: 'application/json' } };
-  const signal = createTimeoutSignal();
-  if (signal) init.signal = signal;
+  const init: RequestInit = {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  };
 
   let response: Response;
   try {

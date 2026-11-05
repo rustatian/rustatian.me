@@ -1,4 +1,4 @@
-import { SITE_URL } from './constants';
+import { SITE_URL } from './constants.ts';
 
 // The pages of the site in nav order. The router, the nav, the canonical
 // URLs and the sitemap read this table.
