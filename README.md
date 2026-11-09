@@ -105,6 +105,20 @@ src/
 
 ---
 
+## ☁️ Infrastructure
+
+`infra/template.yaml` is the CloudFormation stack `rustatian-me` in us-east-1. It holds the Route 53 zone `rustatian.me`, the ACM certificate, the private S3 bucket, the CloudFront distribution with the security headers and the directory-path function, and the GitHub OIDC role for the deploy. CI never changes the stack. Deploy a template change from its PR branch after a review of the change set:
+
+```bash
+aws cloudformation deploy --region us-east-1 --stack-name rustatian-me --template-file infra/template.yaml --capabilities CAPABILITY_NAMED_IAM --no-execute-changeset
+aws cloudformation describe-change-set --region us-east-1 --change-set-name <the change set ARN that the deploy prints>
+aws cloudformation execute-change-set --region us-east-1 --change-set-name <the change set ARN>
+```
+
+Stop if the change set removes or replaces `HostedZone`: the domain registration names the name servers of this zone. `src/__tests__/indexFunction.test.ts` runs the function code of the template, and `src/__tests__/csp.test.ts` checks its script hash.
+
+---
+
 ## 📝 License
 
 See the [LICENSE](./LICENSE) file.
