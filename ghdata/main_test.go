@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -139,7 +141,7 @@ func TestRun(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("err = %v, want it to contain %q", err, tc.wantErr)
 				}
-				if _, statErr := os.Stat(filepath.Join(dir, "api")); !os.IsNotExist(statErr) {
+				if _, statErr := os.Stat(filepath.Join(dir, "api")); !errors.Is(statErr, fs.ErrNotExist) {
 					t.Errorf("%s/api exists after a failed run", dir)
 				}
 				return

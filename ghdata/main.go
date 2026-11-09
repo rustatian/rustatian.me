@@ -145,6 +145,7 @@ func call(client *http.Client, method, url, token string, body []byte) ([]byte, 
 
 // projectUser keeps only the contract fields: with the token of the account owner,
 // GitHub answers with the private-user schema.
+// https://docs.github.com/en/rest/users/users#get-a-user
 func projectUser(body []byte) ([]byte, error) {
 	var u user
 	if err := json.Unmarshal(body, &u); err != nil {
