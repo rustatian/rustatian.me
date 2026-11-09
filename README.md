@@ -108,11 +108,11 @@ src/
 
 ## 🚀 Deploy
 
-`.github/workflows/deploy.yml` deploys `main` to S3 and CloudFront on each push to `main`, every 6 hours and on demand. It runs `bun run check` and the Go tests, writes the GitHub data with `ghdata`, uploads the build and clears the CloudFront cache. A failed step stops the job, and the last good site stays live.
+`.github/workflows/deploy.yml` deploys `main` to S3 and CloudFront on each push to `main`, every 6 hours and on demand. It runs `bun run check` and the Go tests, writes the GitHub data with `ghdata`, uploads the build and clears the CloudFront cache. A failed step before the upload stops the job, and the last good site stays live. If the upload or the cache clear fails, run the workflow again.
 
 - To deploy now or to refresh the GitHub data, run `gh workflow run deploy.yml --repo rustatian/rustatian.me --ref main`. Do not use Re-run for this: a re-run uses the commit of its first run.
 - To roll back, revert the commit on `main`. The push run then deploys the earlier build.
-- The Actions secret `GH_DATA_TOKEN` holds a fine-grained token with read-only access to public repositories. To rotate it, create a new token, run `gh secret set GH_DATA_TOKEN --repo rustatian/rustatian.me`, run the workflow, and then delete the old token.
+- The Actions secret `GH_DATA_TOKEN` holds a fine-grained token with read-only access to public repositories. To rotate it, create a new token. Run `gh secret set GH_DATA_TOKEN --repo rustatian/rustatian.me`. Run the workflow on `main`. Delete the old token.
 
 ---
 
