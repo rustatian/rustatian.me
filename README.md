@@ -38,6 +38,14 @@ bun run build:prod
 
 Output lands in `dist/`, with `/`, `/about`, `/contact` and `/404` prerendered to static HTML.
 
+The GitHub data for the static site comes from `ghdata/`, a Go program with the standard library only. After the build, it writes `api/v1/github/user` and `api/v1/github/contributions` into `dist/`:
+
+```bash
+cd ghdata && GITHUB_TOKEN=$(gh auth token) go run . ../dist
+```
+
+It writes no file when a GitHub answer fails its checks. Its tests run with `go test ./...` in `ghdata/`.
+
 ### 4. 👀 Preview the production build
 
 ```bash
