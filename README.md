@@ -112,8 +112,6 @@ src/
 
 - To deploy now or to refresh the GitHub data, run `gh workflow run deploy.yml --repo rustatian/rustatian.me --ref main`. Do not use Re-run for this: a re-run uses the commit of its first run.
 - To roll back, revert the commit on `main`. The push run then deploys the earlier build.
-- The Actions secret `GH_DATA_TOKEN` holds a fine-grained token with read-only access to public repositories. To rotate it, create a new token. Run `gh secret set GH_DATA_TOKEN --repo rustatian/rustatian.me`. Run the workflow on `main`. Delete the old token.
-
 ---
 
 ## 🧪 Linting and Formatting

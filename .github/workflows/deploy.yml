@@ -52,7 +52,7 @@ jobs:
         working-directory: ghdata
         run: go run . ../dist
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_DATA_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Use the deploy role
         uses: aws-actions/configure-aws-credentials@v6
