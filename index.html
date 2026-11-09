@@ -9,9 +9,10 @@
 		<!--
 			Resolves the theme before first paint; without it a light-mode visitor
 			gets a full dark paint until the bundle hydrates. Must stay inline and
-			blocking. Allowed by CSP via a sha256 source (see THEME_BOOTSTRAP_HASH
-			in src/worker.ts) rather than a nonce, so the HTML stays static and
-			cacheable — edit one and you must re-hash the other.
+			blocking. Allowed by CSP via a sha256 source (THEME_BOOTSTRAP_HASH in
+			src/worker.ts and the ContentSecurityPolicy in infra/template.yaml)
+			rather than a nonce, so the HTML stays static and cacheable. An edit of
+			the script needs the new hash in both places.
 		-->
 		<script>try{var t=localStorage.getItem('rustatian-v2-theme');if(t!=='light'&&t!=='dark')t=matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';document.documentElement.dataset.theme=t}catch(e){}</script>
 	</head>
