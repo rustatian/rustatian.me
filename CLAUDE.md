@@ -12,6 +12,7 @@ Bun-first: `bun.lock` is the committed lockfile and CI runs Bun. Use `bun run <s
 
 - `bun run dev` is `wrangler dev` on **:8787**, serving worker + assets together. `bun run dev:vite` is frontend-only and its `/api/*` routes 404.
 - `bun run check` (typecheck + lint + test + prod build) is the gate CI enforces — run it before calling work done.
+- `ghdata/` is a Go module (standard library only) that writes the GitHub data files into the build: `GITHUB_TOKEN=$(gh auth token) go run . ../dist` in `ghdata/`, after `bun run build:prod`. Its tests run with `go test ./...` in `ghdata/`, and CI runs them too.
 
 Lint and format are **Biome**. There is no ESLint or Prettier despite what muscle memory suggests.
 
@@ -21,7 +22,7 @@ Lint and format are **Biome**. There is no ESLint or Prettier despite what muscl
 
 Load-bearing constraints, none of which the code will teach you on its own:
 
-- **Every upstream route must project its response** (`src/worker/user.ts`, `src/worker/contributions.ts`). Upstream requests carry the site's token, so returning a body verbatim leaks fields GitHub only sends to the account owner. The `UpstreamRoute` type enforces this — don't work around it.
+- **Every upstream route must project its response** (`src/worker/user.ts`, `src/worker/contributions.ts`, and `projectUser` and `projectContributions` in `ghdata/main.go`). Upstream requests carry the site's token, so returning a body verbatim leaks fields GitHub only sends to the account owner. The `UpstreamRoute` type enforces this — don't work around it.
 - **The page list lives in `src/routes.ts`**. The router (`AppRoutes.tsx`), the nav (`Layout.tsx`), the canonical URLs (`Seo.tsx`) and the generated `sitemap.xml` (`vite.config.ts`) read it. vite-prerender-plugin follows every same-origin link it renders, so each linked page is prerendered without a prerender entry. The `/404` shell is the one route outside the table: `vite.config.ts` lists it for prerendering and `src/worker.ts` serves it for misses.
 - **The inline theme script in `index.html` is CSP-allowed by a sha256 hash** pinned as `THEME_BOOTSTRAP_HASH` in `src/worker.ts`. Editing that script — whitespace included — invalidates the hash and theme resolution silently stops. Recompute both together.
 - **Design tokens are `--s-*` / `--r-*` / `--fs-*` / `--fg-*` / `--bg-*` / `--bd-*`** (see `src/styles/tokens.css`). An invented token name produces a declaration the browser silently drops, so the styling just goes missing rather than erroring.
