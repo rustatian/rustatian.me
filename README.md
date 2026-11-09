@@ -106,6 +106,15 @@ src/
 
 ---
 
+## 🚀 Deploy
+
+`.github/workflows/deploy.yml` deploys `main` to S3 and CloudFront on each push to `main`, every 6 hours and on demand. It runs `bun run check` and the Go tests, writes the GitHub data with `ghdata`, uploads the build and clears the CloudFront cache. A failed step before the upload stops the job, and the last good site stays live. If the upload or the cache clear fails, run the workflow again.
+
+- To deploy now or to refresh the GitHub data, run `gh workflow run deploy.yml --repo rustatian/rustatian.me --ref main`. Do not use Re-run for this: a re-run uses the commit of its first run.
+- To roll back, revert the commit on `main`. The push run then deploys the earlier build.
+
+---
+
 ## 🧪 Linting and Formatting
 
 - **[Biome](https://biomejs.dev/)** handles both linting and formatting (`biome.json`).
