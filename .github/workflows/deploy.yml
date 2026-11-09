@@ -1,0 +1,70 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Refreshes the GitHub data. GitHub delays scheduled runs at the start of each hour.
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy
+
+env:
+  BUCKET: rustatian-me-site-860334207583
+  DISTRIBUTION_ID: E2KURVJJV3PUBY
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Use Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check and build
+        run: bun run check
+
+      - name: Use Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Test the data program
+        working-directory: ghdata
+        run: go test ./...
+
+      - name: Write the GitHub data
+        working-directory: ghdata
+        run: go run . ../dist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_DATA_TOKEN }}
+
+      - name: Use the deploy role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::860334207583:role/rustatian-me-deploy
+          aws-region: us-east-1
+
+      # Old hashed assets stay in the bucket, so a cached old page still finds its files.
+      - name: Upload the site
+        run: |
+          aws s3 sync dist/assets "s3://$BUCKET/assets" --cache-control 'public, max-age=31536000, immutable'
+          aws s3 sync dist "s3://$BUCKET" --delete --exclude 'assets/*' --exclude 'api/*' --cache-control 'public, max-age=0, s-maxage=86400'
+          aws s3 cp dist/api "s3://$BUCKET/api" --recursive --content-type application/json --cache-control 'public, max-age=0, s-maxage=86400'
+
+      - name: Clear the CloudFront cache
+        run: aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*'
