@@ -4,6 +4,8 @@ Description: The rustatian.me hosted zone and the static homepage on S3 and Clou
 Resources:
   # Retain: the registration names the name servers of this zone, and a new zone gets other ones.
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-attribute-deletionpolicy.html
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-attribute-updatereplacepolicy.html
+  # https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/DeleteHostedZone.html
   HostedZone:
     Type: AWS::Route53::HostedZone
     DeletionPolicy: Retain
@@ -12,7 +14,7 @@ Resources:
       Name: rustatian.me
 
   # The homelab DNS update job owns the temporal and vpn records.
-  # Runbook Step 9: the NS record set that delegates slowo.rustatian.me goes here.
+  # The NS record set that delegates slowo.rustatian.me goes here.
 
   Certificate:
     Type: AWS::CertificateManager::Certificate

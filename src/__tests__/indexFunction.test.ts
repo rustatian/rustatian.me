@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 type Handler = (event: { request: { uri: string } }) => Promise<{ uri: string }>;
 
@@ -29,6 +29,8 @@ const cases = [
   { name: 'direct 404 path', uri: '/404', want: '/404/index.html' },
 ];
 
-it.each(cases)('$name', async ({ uri, want }) => {
-  expect((await handler({ request: { uri } })).uri).toBe(want);
+describe('IndexFunction', () => {
+  it.each(cases)('$name', async ({ uri, want }) => {
+    expect((await handler({ request: { uri } })).uri).toBe(want);
+  });
 });
