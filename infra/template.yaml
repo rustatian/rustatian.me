@@ -21,7 +21,21 @@ Resources:
       Name: rustatian.me
 
   # The homelab DNS update job owns the temporal and vpn records.
-  # The NS record set that delegates slowo.rustatian.me goes here.
+
+  # The name servers of the zone slowo.rustatian.me in the stack slowo-shared of rustatian/jak-tam-to-slowo (eu-central-1). The values are copies, so this stack does not depend on that stack. That zone has Retain, so its name servers do not change.
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-getstackoutput.html
+  SlowoDelegation:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: slowo.rustatian.me
+      Type: NS
+      TTL: '3600'
+      ResourceRecords:
+        - ns-294.awsdns-36.com
+        - ns-1248.awsdns-28.org
+        - ns-902.awsdns-48.net
+        - ns-1891.awsdns-44.co.uk
 
   Certificate:
     Type: AWS::CertificateManager::Certificate
