@@ -124,14 +124,14 @@ src/
 
 ## ☁️ Infrastructure
 
-`infra/template.yaml` is the CloudFormation stack `rustatian-me` in us-east-1. It holds the Route 53 zone `rustatian.me`, the ACM certificate, the private S3 bucket, the CloudFront distribution with the security headers and the directory-path function, and the GitHub OIDC role for the deploy. CI never changes the stack. Deploy a template change from its PR branch after a review of the change set. First make the change set and read it:
+`infra/template.yaml` is the CloudFormation stack `rustatian-me` in us-east-1. It holds the Route 53 zone `rustatian.me` with its DNSSEC signing and two DNSSEC alarms, the ACM certificate, the private S3 bucket, the CloudFront distribution with the security headers and the directory-path function, and the GitHub OIDC role for the deploy. CI never changes the stack. The stack parameter `AlarmEmail` is the email address of the alarms. A new stack and the first deploy that adds the parameter need `--parameter-overrides AlarmEmail=<address>`. Later updates keep the value. After the deploy that makes the topic, confirm the email from AWS Notifications in 48 hours: SNS deletes a subscription that is not confirmed. `aws sns list-subscriptions-by-topic --region us-east-1 --topic-arn <the AlarmTopic ARN>` shows a subscription ARN, not `PendingConfirmation`, after the confirmation. Deploy a template change from its PR branch after a review of the change set. First make the change set and read it:
 
 ```bash
 aws cloudformation deploy --region us-east-1 --stack-name rustatian-me --template-file infra/template.yaml --capabilities CAPABILITY_NAMED_IAM --no-execute-changeset
 aws cloudformation describe-change-set --region us-east-1 --change-set-name <the change set ARN that the deploy prints>
 ```
 
-Stop if the change set removes or replaces `HostedZone`: the domain registration names the name servers of this zone. Otherwise run the change set and wait for the update:
+Stop if the change set removes or replaces `HostedZone`: the domain registration names the name servers of this zone. Also stop if it changes `DnssecKey`, `KeySigningKey` or `Dnssec` while the domain registration has the DS record: a wrong key, a wrong key policy or a zone that stops signing makes validating resolvers return SERVFAIL for every name in the zone. Otherwise run the change set and wait for the update:
 
 ```bash
 aws cloudformation execute-change-set --region us-east-1 --change-set-name <the change set ARN>
