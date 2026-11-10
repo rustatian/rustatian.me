@@ -1,6 +1,13 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: The rustatian.me hosted zone and the static homepage on S3 and CloudFront.
 
+Parameters:
+  # The repository is public, so the address is a stack parameter.
+  AlarmEmail:
+    Type: String
+    NoEcho: true
+    Description: The email address that gets the DNSSEC alarms.
+
 Resources:
   # Retain: the registration names the name servers of this zone, and a new zone gets other ones.
   # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-attribute-deletionpolicy.html
@@ -185,6 +192,122 @@ Resources:
           AliasTarget:
             DNSName: !GetAtt Distribution.DomainName
             HostedZoneId: Z2FDTNDATAQYW2
+
+  # Route 53 signs the zone with a key-signing key that uses this key. The key must be in us-east-1, with the key spec ECC_NIST_P256 for signing.
+  # https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-configuring-dnssec-cmk-requirements.html
+  # https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/access-control-managing-permissions.html#KMS-key-policy-for-DNSSEC
+  DnssecKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Route 53 DNSSEC key-signing key of rustatian.me
+      KeySpec: ECC_NIST_P256
+      KeyUsage: SIGN_VERIFY
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          # The default key policy statement: the account and its IAM policies manage the key.
+          # https://docs.aws.amazon.com/kms/latest/developerguide/key-policy-default.html#key-policy-default-allow-root-enable-iam
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: kms:*
+            Resource: '*'
+          - Sid: Allow Route 53 DNSSEC Service
+            Effect: Allow
+            Principal:
+              Service: dnssec-route53.amazonaws.com
+            Action:
+              - kms:DescribeKey
+              - kms:GetPublicKey
+              - kms:Sign
+            Resource: '*'
+            Condition:
+              StringEquals:
+                AWS:SourceAccount: !Ref AWS::AccountId
+              ArnEquals:
+                AWS:SourceArn: !Sub 'arn:aws:route53:::hostedzone/${HostedZone}'
+          - Sid: Allow Route 53 DNSSEC to CreateGrant
+            Effect: Allow
+            Principal:
+              Service: dnssec-route53.amazonaws.com
+            Action: kms:CreateGrant
+            Resource: '*'
+            Condition:
+              Bool:
+                kms:GrantIsForAWSResource: true
+
+  # The name allows only letters, digits and underscores.
+  # A replacement of this resource or of DnssecKey makes a new key that does not match the DS record at the domain registration.
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-route53-keysigningkey.html#cfn-route53-keysigningkey-name
+  KeySigningKey:
+    Type: AWS::Route53::KeySigningKey
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      KeyManagementServiceArn: !GetAtt DnssecKey.Arn
+      Name: rustatian_me
+      Status: ACTIVE
+
+  # Signing needs an ACTIVE key-signing key, and no property of this resource refers to it.
+  # https://docs.aws.amazon.com/Route53/latest/APIReference/API_EnableHostedZoneDNSSEC.html#API_EnableHostedZoneDNSSEC_Errors
+  Dnssec:
+    Type: AWS::Route53::DNSSEC
+    DependsOn: KeySigningKey
+    Properties:
+      HostedZoneId: !Ref HostedZone
+
+  # The subscription sends a confirmation email first. Alarms reach the address only after the confirmation.
+  # SNS deletes a subscription that is not confirmed in 48 hours, and a stack update without changes does not make it again.
+  # https://docs.aws.amazon.com/sns/latest/dg/sns-email-notifications.html
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: rustatian-me-alarms
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlarmEmail
+
+  # Route 53 publishes the DNSSEC metrics in us-east-1, one data point per 4 hours, so the period is 4 hours.
+  # https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/monitoring-hosted-zones-with-cloudwatch.html#cloudwatch-metrics-route-53-hosted-zones
+  DnssecInternalFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: rustatian-me-dnssec-internal-failure
+      AlarmDescription: A DNSSEC object of the rustatian.me zone is in the state INTERNAL_FAILURE.
+      Namespace: AWS/Route53
+      MetricName: DNSSECInternalFailure
+      Dimensions:
+        - Name: HostedZoneId
+          Value: !Ref HostedZone
+      Statistic: Sum
+      Period: 14400
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  # ACTION_NEEDED means that Route 53 cannot use DnssecKey. When the current signatures expire, validating resolvers return SERVFAIL for the zone.
+  # https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-configuring-dnssec-troubleshoot.html
+  DnssecKeyActionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: rustatian-me-dnssec-ksk-action-needed
+      AlarmDescription: A key-signing key of the rustatian.me zone is in the state ACTION_NEEDED.
+      Namespace: AWS/Route53
+      MetricName: DNSSECKeySigningKeysNeedingAction
+      Dimensions:
+        - Name: HostedZoneId
+          Value: !Ref HostedZone
+      Statistic: Sum
+      Period: 14400
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
 
   # The deploy workflow can only upload the site and clear the cache. A person deploys this stack.
   DeployRole:
