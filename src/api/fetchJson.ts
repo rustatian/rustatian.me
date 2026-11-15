@@ -1,8 +1,5 @@
 import type { z } from 'zod';
-import { ErrorEnvelopeContract } from './contracts';
 
-// Exceeds the worker's own 8s upstream budget so the proxy leg gets to fail
-// first and return a real error, rather than the UI aborting a live request.
 const REQUEST_TIMEOUT_MS = 10_000;
 
 const TIMEOUT_MESSAGE = 'Request timed out — check your connection';
@@ -10,20 +7,6 @@ const TIMEOUT_MESSAGE = 'Request timed out — check your connection';
 // `AbortSignal.timeout()` rejects with a DOMException-flavored TimeoutError.
 const isAbort = (error: unknown): boolean =>
   error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
-
-const errorFromResponse = async (response: Response): Promise<Error> => {
-  const fallbackMessage = `GitHub API error: ${response.status}`;
-
-  try {
-    const payload: unknown = await response.json();
-    const parsed = ErrorEnvelopeContract.safeParse(payload);
-    if (parsed.success) return new Error(parsed.data.error.message);
-    console.warn('Worker error envelope mismatch', { issues: parsed.error.issues, payload });
-  } catch (error) {
-    console.warn('Failed to parse the worker error body', error);
-  }
-  return new Error(fallbackMessage);
-};
 
 // Browser `fetch` surfaces network-level failures (DNS, offline, CORS
 // preflight, connection reset) as TypeError.
@@ -47,7 +30,7 @@ export const fetchJson = async <T>(url: string, schema: z.ZodType<T>): Promise<T
   }
 
   if (!response.ok) {
-    throw await errorFromResponse(response);
+    throw new Error(`GitHub API error: ${response.status}`);
   }
 
   let data: unknown;

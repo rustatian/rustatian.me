@@ -4,7 +4,7 @@ import { getUser } from '../githubRequests';
 const mockFetch = vi.fn();
 global.fetch = mockFetch as typeof fetch;
 
-// The wire shape: the worker projects the upstream payload down to these four.
+// The wire shape: ghdata projects the upstream payload down to these four.
 const validUserData = {
   login: 'testuser',
   public_repos: 42,

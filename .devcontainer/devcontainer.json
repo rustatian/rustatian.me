@@ -14,6 +14,6 @@
     }
   },
   "forwardPorts": [5173],
-  "postStartCommand": "bun run dev --host",
+  "postStartCommand": "bun run dev",
   "remoteUser": "node"
 }

@@ -13,8 +13,7 @@ import (
 	"testing"
 )
 
-// The expected values come from UserContract and ContributionsContract in src/api/contracts.ts
-// and from the zod schemas of src/worker/user.ts and src/worker/contributions.ts.
+// The expected values come from UserContract and ContributionsContract in src/api/contracts.ts.
 
 const calendar = `{"data":{"user":{"contributionsCollection":{"contributionCalendar":{"totalContributions":17,"weeks":[{"contributionDays":[{"date":"2026-04-12","contributionCount":0,"contributionLevel":"NONE"},{"date":"2026-04-13","contributionCount":1,"contributionLevel":"FIRST_QUARTILE"}]},{"contributionDays":[{"date":"2026-04-19","contributionCount":2,"contributionLevel":"SECOND_QUARTILE"},{"date":"2026-04-20","contributionCount":5,"contributionLevel":"THIRD_QUARTILE"},{"date":"2026-04-21","contributionCount":9,"contributionLevel":"FOURTH_QUARTILE"}]}]}}}}}`
 

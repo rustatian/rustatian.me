@@ -1,10 +1,9 @@
 import { z } from 'zod';
 
-// The shapes that cross the worker-to-browser seam. The worker projects each
-// upstream payload through its contract and the client parses the response
-// with the same contract. `z.object` strips unknown keys, so the projection
-// holds on both sides: upstream requests carry the site's token, and GitHub
-// answers them with owner-only fields that must not reach a visitor.
+// The shapes of the GitHub data files that ghdata/main.go writes. ghdata projects each
+// GitHub answer to these fields: its requests carry the site's token, and GitHub answers
+// them with owner-only fields that must not reach a visitor. The client parses each file
+// with its contract.
 
 export const UserContract = z.object({
   login: z.string(),
@@ -27,14 +26,3 @@ export const ContributionsContract = z.object({
   days: z.array(ContribDaySchema),
 });
 export type Contributions = z.infer<typeof ContributionsContract>;
-
-// The worker's error envelope. The client shows `message`; `code` and
-// `requestId` serve debugging with curl.
-export const ErrorEnvelopeContract = z.object({
-  error: z.object({
-    code: z.string(),
-    message: z.string(),
-    requestId: z.string(),
-  }),
-});
-export type ErrorEnvelope = z.infer<typeof ErrorEnvelopeContract>;
