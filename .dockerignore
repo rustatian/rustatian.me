@@ -4,7 +4,5 @@
 node_modules
 dist
 coverage
-.wrangler
 *.log
 .env*
-.dev.vars

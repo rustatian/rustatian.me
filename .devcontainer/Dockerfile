@@ -34,4 +34,4 @@ EXPOSE 5173
 
 SHELL ["/bin/bash", "-c"]
 
-CMD ["bun", "run", "dev", "--host"]
+CMD ["bun", "run", "dev"]

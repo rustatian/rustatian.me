@@ -44,15 +44,11 @@ export default defineConfig(({ mode }) => {
   return {
     plugins,
     build: {
-      // Ensure proper output for Cloudflare Workers
       target: 'esnext',
       minify: mode === 'production',
-      // No production source maps. `'hidden'` did not do what its name suggests:
-      // the .map files were still emitted into dist/, wrangler uploads dist/
-      // wholesale, and the worker serves /assets/* — so a 726KB map with full
-      // `sourcesContent` was publicly fetchable, and this toolchain emitted the
-      // `sourceMappingURL` comment anyway. Nothing consumes them (no error
-      // tracker is wired up), so don't produce them.
+      // No production source maps. `'hidden'` still emits the .map files with full
+      // `sourcesContent` into dist/, and the deploy uploads dist/ as a whole, so the
+      // maps become public. Nothing reads them: no error tracker is set up.
       sourcemap: mode !== 'production',
       chunkSizeWarningLimit: 500,
     },

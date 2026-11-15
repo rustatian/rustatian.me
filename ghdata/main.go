@@ -17,7 +17,6 @@ import (
 
 const login = "rustatian"
 
-// A copy of CONTRIBUTIONS_QUERY in src/worker/contributions.ts.
 const contributionsQuery = `query ContribCal($login: String!) {
   user(login: $login) {
     contributionsCollection {

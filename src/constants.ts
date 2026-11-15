@@ -1,4 +1,3 @@
-export const PROFILE_NAME = 'rustatian';
 export const SITE_URL = 'https://rustatian.me';
 export const OG_IMAGE_PATH = '/og_default.png';
 

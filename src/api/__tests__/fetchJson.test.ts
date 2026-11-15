@@ -65,26 +65,17 @@ const failures = [
     message: 'Received an unexpected response from the server',
   },
   {
-    name: 'worker envelope message is surfaced',
+    name: 'error status with a JSON body reports the status',
     fetch: () =>
       Promise.resolve(
         json(502, {
-          error: {
-            code: 'UPSTREAM_ERROR',
-            message: 'GitHub upstream responded with status 403',
-            requestId: 'req_1',
-          },
+          error: { code: 'UPSTREAM_ERROR', message: 'upstream failed', requestId: 'r1' },
         }),
       ),
-    message: 'GitHub upstream responded with status 403',
-  },
-  {
-    name: 'envelope without a message falls back to the status',
-    fetch: () => Promise.resolve(json(502, { error: { code: 'UPSTREAM_ERROR' } })),
     message: 'GitHub API error: 502',
   },
   {
-    name: 'non-JSON error body falls back to the status',
+    name: 'error status with a non-JSON body reports the status',
     fetch: () =>
       Promise.resolve({ ok: false, status: 404, json: () => Promise.reject(new SyntaxError('x')) }),
     message: 'GitHub API error: 404',
