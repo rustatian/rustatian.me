@@ -1,8 +1,9 @@
-import { cleanup } from '@testing-library/preact';
+import { act, cleanup } from '@testing-library/preact';
 import { afterEach } from 'vitest';
 
 afterEach(() => {
-  cleanup();
+  // Preact 11 defers the useEffect cleanups of an unmounted tree to the next frame. act() runs them now.
+  act(() => cleanup());
 });
 
 // This jsdom setup exposes `Storage` but leaves `window.localStorage` undefined
